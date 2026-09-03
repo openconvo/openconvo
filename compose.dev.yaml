@@ -1,0 +1,14 @@
+# Development overlay: build the OpenConvo image from this checkout instead
+# of running the published one.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+#
+# It exists so compose.yaml can stay build-free. A deployment running released
+# images should never be able to replace one with an accidental --build, and a
+# warning in the documentation is a weaker guarantee than a file that has
+# nothing to build.
+
+services:
+  openconvo:
+    image: openconvo:dev
+    build: .

@@ -1,0 +1,90 @@
+# OpenConvo — default self-hosting deployment.
+#
+#   ./scripts/install.sh
+#   open http://localhost:8080
+#
+# Exactly two containers: OpenConvo and PostgreSQL. PostgreSQL is not
+# exposed on the host; only the OpenConvo HTTP port is published.
+#
+# This file runs an exact published image and deliberately has no build
+# section, so --build cannot replace a release with the working tree. The
+# installer records the selected image in .env; scripts/upgrade.sh changes it
+# only after the replacement image has been pulled and a backup has succeeded.
+# To run a checkout:
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+
+name: openconvo
+
+services:
+  openconvo:
+    image: ${OPENCONVO_IMAGE:-ghcr.io/openconvo/openconvo:0.1.0}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://openconvo:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set; run ./scripts/install.sh}@postgres:5432/openconvo?sslmode=disable
+      OPENCONVO_AUTO_MIGRATE: ${OPENCONVO_AUTO_MIGRATE:-true}
+      OPENCONVO_HOST: ${OPENCONVO_HOST:-}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:-}
+      OPENCONVO_ADMIN_PASSWORD: ${OPENCONVO_ADMIN_PASSWORD:?OPENCONVO_ADMIN_PASSWORD is not set; run ./scripts/install.sh}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
+      STORAGE_PATH: ${STORAGE_PATH:-/data/attachments}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_SESSION_TOKEN: ${S3_SESSION_TOKEN:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      OPENCONVO_ATTACHMENTS_ENABLED: ${OPENCONVO_ATTACHMENTS_ENABLED:-false}
+      OPENCONVO_ATTACHMENT_MAX_BYTES: ${OPENCONVO_ATTACHMENT_MAX_BYTES:-104857600}
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
+      BACKUP_PROVIDER: ${BACKUP_PROVIDER:-r2}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-auto}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-openconvo/database-backups}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
+      BACKUP_S3_SESSION_TOKEN: ${BACKUP_S3_SESSION_TOKEN:-}
+      BACKUP_S3_FORCE_PATH_STYLE: ${BACKUP_S3_FORCE_PATH_STYLE:-false}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-30}
+      BACKUP_PG_DUMP_PATH: ${BACKUP_PG_DUMP_PATH:-pg_dump}
+      OPENCONVO_EMBEDDINGS_ENABLED: ${OPENCONVO_EMBEDDINGS_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENCONVO_MCP_HTTP_ENABLED: ${OPENCONVO_MCP_HTTP_ENABLED:-false}
+      OPENCONVO_MCP_TOKEN: ${OPENCONVO_MCP_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+    ports:
+      # HOST_ADDRESS:HOST_PORT:CONTAINER_PORT. OpenConvo always listens on
+      # 8080 inside the container; these choose where that is published.
+      # Docker's own iptables rules are consulted before a host firewall, so
+      # ufw does not close a published port — 127.0.0.1 is what keeps the
+      # archive reachable only by a reverse proxy on this machine.
+      - "${OPENCONVO_PUBLISH_ADDRESS:-127.0.0.1}:${OPENCONVO_PORT:-8080}:8080"
+    volumes:
+      - openconvo-data:/data
+
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openconvo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set; run ./scripts/install.sh}
+      POSTGRES_DB: openconvo
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openconvo -d openconvo"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  openconvo-data:
+  postgres-data:

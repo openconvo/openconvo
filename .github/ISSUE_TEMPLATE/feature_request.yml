@@ -1,0 +1,41 @@
+name: Feature request or feedback
+description: A problem OpenConvo doesn't solve yet, or a decision you think is wrong
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful thing you can send is the **problem you hit**, not a
+        designed solution — the use case is what shapes the work.
+
+        Please don't include an implementation or a patch. OpenConvo is open
+        source but not open contribution
+        ([why](https://github.com/openconvo/openconvo/blob/main/CONTRIBUTING.md)).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What were you trying to do
+      description: The actual situation — the community, the workflow, what you reached for and couldn't find.
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you're doing instead
+      description: The current workaround, if there is one, and where it falls down.
+    validations:
+      required: false
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What a good outcome looks like
+      description: How you'd know this was solved. Behavior, not implementation.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked [docs/roadmap.md](https://github.com/openconvo/openconvo/blob/main/docs/roadmap.md) — this isn't already a listed non-goal or known limitation.
+          required: false

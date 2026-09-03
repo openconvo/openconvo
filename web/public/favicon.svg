@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 2048 2048">
+  <title>OpenConvo</title>
+  <defs><path id="c" d="M1744 1304.014880557A235 235 0 1 1 1391.5 1100.498910668L1634 960.491470389A250 250 0 0 0 1744 829.278729989Z"/></defs>
+  <g fill="#1f6f54">
+    <use href="#c" xlink:href="#c"/>
+    <use href="#c" xlink:href="#c" transform="rotate(60 1024 1024)"/>
+    <use href="#c" xlink:href="#c" transform="rotate(180 1024 1024)"/>
+    <use href="#c" xlink:href="#c" transform="rotate(240 1024 1024)"/>
+  </g>
+  <g fill="#a8d5c2">
+    <use href="#c" xlink:href="#c" transform="rotate(120 1024 1024)"/>
+    <use href="#c" xlink:href="#c" transform="rotate(300 1024 1024)"/>
+  </g>
+</svg>

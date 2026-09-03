@@ -1,0 +1,59 @@
+{
+  "id": "1140384234567890123",
+  "channel_id": "998877665544332211",
+  "guild_id": "112233445566778899",
+  "author": {
+    "id": "445566778899001122",
+    "username": "john",
+    "global_name": "John",
+    "avatar": "8342729096ea3675442027381ff50dfe",
+    "discriminator": "0",
+    "public_flags": 0,
+    "bot": false
+  },
+  "content": "What glue are you using for maple veneer? Mine keeps delaminating after a week.",
+  "timestamp": "2026-03-14T09:26:53.589000+00:00",
+  "edited_timestamp": null,
+  "tts": false,
+  "mention_everyone": false,
+  "mentions": [],
+  "mention_roles": [],
+  "attachments": [
+    {
+      "id": "1140384235000000001",
+      "filename": "delamination.jpg",
+      "description": "Photo of the delaminated deck",
+      "content_type": "image/jpeg",
+      "size": 431872,
+      "url": "https://cdn.discordapp.com/attachments/998877665544332211/1140384235000000001/delamination.jpg",
+      "proxy_url": "https://media.discordapp.net/attachments/998877665544332211/1140384235000000001/delamination.jpg",
+      "width": 1600,
+      "height": 1200
+    }
+  ],
+  "embeds": [],
+  "reactions": [
+    {
+      "emoji": { "id": null, "name": "👍" },
+      "count": 3,
+      "count_details": { "burst": 0, "normal": 3 },
+      "me": false
+    },
+    {
+      "emoji": { "id": "667788990011223344", "name": "kickflip" },
+      "count": 1,
+      "count_details": { "burst": 0, "normal": 1 },
+      "me": false
+    }
+  ],
+  "pinned": false,
+  "type": 19,
+  "message_reference": {
+    "type": 0,
+    "channel_id": "998877665544332211",
+    "message_id": "1140380000000000042",
+    "guild_id": "112233445566778899"
+  },
+  "flags": 0,
+  "components": []
+}

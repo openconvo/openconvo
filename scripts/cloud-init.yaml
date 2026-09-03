@@ -1,0 +1,105 @@
+#cloud-config
+#
+# OpenConvo server provisioning, for a brand-new cloud server.
+#
+# Paste this into your provider's user-data field when you create the machine
+# (DigitalOcean calls it Advanced Options → Add Initialization scripts; Hetzner,
+# Vultr and AWS all have the same box). It runs once, at first boot, on a
+# machine with nothing else on it — which is why it can be this direct, and why
+# a mistake costs you a destroyed droplet rather than a debugging session.
+#
+# Change one thing before pasting: archive.example.com, in the Caddyfile below.
+#
+# It installs Docker, opens 22/80/443 and nothing else, installs Caddy
+# configured for your domain, and clones OpenConvo to /opt/openconvo. Then
+# you SSH in and run the installer yourself:
+#
+#   cd /opt/openconvo && ./scripts/install.sh
+#
+# It deliberately stops short of that last step. The installer asks for the
+# administrator password, and user data is not a secret store: your provider
+# retains it, displays it in their control panel, and anything running on the
+# machine can read it back from the metadata service for the life of the
+# server. A password that goes in here is a password you have published.
+#
+# Written for Ubuntu 24.04 LTS.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - ufw
+
+# Swap keeps a long history backfill from getting PostgreSQL killed on a 1 GB
+# machine, and costs nothing on a larger one.
+swap:
+  filename: /swapfile
+  size: 2147483648
+  maxsize: 2147483648
+
+write_files:
+  # Staged rather than written straight to /etc/caddy/Caddyfile: that path
+  # belongs to the caddy package, and installing over an existing copy is the
+  # kind of thing dpkg asks questions about. runcmd puts it in place once the
+  # package is installed.
+  #
+  # Three lines is the whole configuration. Caddy obtains and renews the
+  # certificate, redirects HTTP to HTTPS, and — all by default — forwards the
+  # three things OpenConvo reads: the original Host header, which its
+  # cross-site check compares the browser's Origin against; X-Forwarded-Proto,
+  # which is how the session cookie earns its Secure flag; and X-Forwarded-For,
+  # which provides conventional client-address context for access logs and the
+  # advisory plaintext-exposure detector. Authentication throttling does not
+  # trust forwarding headers without an explicit proxy allowlist.
+  - path: /etc/caddy/Caddyfile.openconvo
+    owner: root:root
+    permissions: "0644"
+    content: |
+      archive.example.com {
+      	reverse_proxy 127.0.0.1:8080
+      }
+
+runcmd:
+  # SSH and the web ports, nothing else. This does not close a published Docker
+  # port — Docker's iptables rules are consulted before ufw's input chain — so
+  # answer yes to the installer's reverse-proxy question, which publishes
+  # OpenConvo on 127.0.0.1 where only Caddy can reach it.
+  - ufw allow OpenSSH
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+  # Docker, from Docker's own signed repository. Ubuntu's docker.io package
+  # does not carry the Compose plugin OpenConvo's tooling expects.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list'
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # Caddy, from its own repository.
+  - 'curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg'
+  - 'curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list'
+  - apt-get update
+  - apt-get install -y caddy
+  - install -m 0644 -o root -g root /etc/caddy/Caddyfile.openconvo /etc/caddy/Caddyfile
+  - rm -f /etc/caddy/Caddyfile.openconvo
+  - systemctl restart caddy
+
+  # OpenConvo itself, ready for the installer.
+  - git clone --branch v0.1.0 --depth 1 https://github.com/openconvo/openconvo /opt/openconvo
+
+final_message: |
+  OpenConvo's dependencies are installed. Caddy is serving the domain in the
+  Caddyfile and will keep retrying its certificate until DNS points here.
+
+  Finish the installation:
+
+    cd /opt/openconvo && ./scripts/install.sh
+
+  Answer yes to the reverse-proxy question so the archive is published on
+  127.0.0.1 only.

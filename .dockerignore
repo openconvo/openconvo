@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.claude/
+.superpowers/
+.DS_Store
+bin/
+web/node_modules/
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+docs/
+*.md
+!README.md

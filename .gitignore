@@ -1,0 +1,29 @@
+# Secrets — never commit tokens. .env.example is the documented template.
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+bin/
+web/node_modules/
+web/dist/
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+*.tsbuildinfo
+
+# OS noise
+.DS_Store
+
+# Test/coverage output
+coverage.out
+
+# Local run scratch: STORAGE_PATH points here outside Docker, so real
+# archived attachments land in it (.claude/skills/running-locally).
+tmp/
+
+# Agent scratch (plan ledgers, task briefs, review packages), wherever it lands
+.superpowers/
+**/superpowers/
+
+# Per-developer Claude Code settings; .claude/settings.json is the shared one.
+.claude/settings.local.json

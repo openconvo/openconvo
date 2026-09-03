@@ -1,0 +1,66 @@
+name: Bug report
+description: Something OpenConvo does wrong, or stops doing
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Two notes before you start:
+
+        - **Not for security issues.** Report those privately —
+          [SECURITY.md](https://github.com/openconvo/openconvo/blob/main/SECURITY.md).
+        - **Please don't attach a patch or a proposed diff.** OpenConvo is open
+          source but not open contribution
+          ([why](https://github.com/openconvo/openconvo/blob/main/CONTRIBUTING.md)),
+          and code sent in can't be used. Logs, config, stack traces and
+          reproductions are exactly what's wanted — those aren't patches.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what OpenConvo did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows the problem. If it only happens with particular data or at a particular scale, say so.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `openconvo version`, or `docker compose exec app openconvo version`.
+      placeholder: "v0.1.0 (abc1234)"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it's installed
+      options:
+        - Docker Compose (scripts/install.sh)
+        - Docker Compose (manual)
+        - Binary, built from source
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Anything relevant: host OS, PostgreSQL version, blob storage (filesystem or S3),
+        approximate archive size, whether attachments and the semantic index are enabled.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output. **Remove Discord tokens, admin passwords and database URLs** before pasting.
+      render: text
+    validations:
+      required: false

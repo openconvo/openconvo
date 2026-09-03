@@ -1,0 +1,47 @@
+[
+  {
+    "id": "998877665544332211",
+    "guild_id": "112233445566778899",
+    "type": 0,
+    "name": "deck-making",
+    "topic": "Veneer, molds, glue",
+    "position": 3,
+    "parent_id": "990000000000000001",
+    "permission_overwrites": []
+  },
+  {
+    "id": "990000000000000001",
+    "guild_id": "112233445566778899",
+    "type": 4,
+    "name": "Ateliers",
+    "position": 0,
+    "permission_overwrites": []
+  },
+  {
+    "id": "990000000000000002",
+    "guild_id": "112233445566778899",
+    "type": 0,
+    "name": "staff-only",
+    "position": 9,
+    "permission_overwrites": [
+      { "id": "112233445566778899", "type": 0, "allow": "0", "deny": "1024" }
+    ]
+  },
+  {
+    "id": "990000000000000003",
+    "guild_id": "112233445566778899",
+    "type": 15,
+    "name": "builds",
+    "topic": "Post your builds",
+    "position": 5,
+    "permission_overwrites": []
+  },
+  {
+    "id": "990000000000000004",
+    "guild_id": "112233445566778899",
+    "type": 11,
+    "name": "First build advice",
+    "parent_id": "990000000000000003",
+    "thread_metadata": { "archived": true, "archive_timestamp": "2026-05-01T10:00:00+00:00" }
+  }
+]

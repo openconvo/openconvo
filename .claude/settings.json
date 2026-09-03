@@ -1,0 +1,20 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make build)",
+      "Bash(make lint)",
+      "Bash(make test)",
+      "Bash(make test-db)",
+      "Bash(make web)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./tmp/**)"
+    ]
+  }
+}
