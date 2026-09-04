@@ -29,4 +29,7 @@ document has one clear job.
 - [README](../README.md): product overview and quick start
 - [Contributing](../CONTRIBUTING.md): feedback policy and maintainer handbook
 - [Security policy](../SECURITY.md): private vulnerability reporting
+- [Support](../SUPPORT.md): where questions, bugs, ideas and security reports go
+- [Code of conduct](../CODE_OF_CONDUCT.md): expectations and the enforcement contact
+- [Maintainers](../MAINTAINERS.md): who decides, and how
 - [License](../LICENSE): AGPL-3.0-or-later
