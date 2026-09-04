@@ -108,6 +108,22 @@ terminal.
 
 The screenshots in this guide use fictional, synthetic community data.
 
+### Verifying the published image
+
+Each release publishes a build provenance attestation for its image, and from
+v0.1.1 an SBOM attestation as well, through GitHub's artifact attestation
+service. With the [GitHub CLI](https://cli.github.com/) installed:
+
+```bash
+docker pull ghcr.io/openconvo/openconvo:0.1.0
+docker run --rm ghcr.io/openconvo/openconvo:0.1.0 version
+gh attestation verify oci://ghcr.io/openconvo/openconvo:0.1.0 -R openconvo/openconvo
+```
+
+`version` prints the release version and the commit its tag points to, and
+`gh attestation verify` confirms the image was built by this repository's
+release workflow from that tag. The same commands work for any later version.
+
 ## Administrator sign-in
 
 OpenConvo requires one built-in administrator password before it will serve.
@@ -177,6 +193,15 @@ hold. Add titles, descriptions, tags and collection names on the Bookmarks page.
 
 OpenConvo only works as an official bot. It will refuse tokens that belong
 to user accounts (self-bots violate Discord's terms).
+
+### Before you archive
+
+OpenConvo enforces channel selection and its privacy defaults; being entitled
+to archive is on you. Archive only servers you administer or have the owner's
+permission to archive, tell members which channels are archived and who can
+read the archive, decide retention and access deliberately, and stay within
+Discord's Terms of Service and Developer Policy and the law that applies to you
+and your members.
 
 ## Selecting channels
 

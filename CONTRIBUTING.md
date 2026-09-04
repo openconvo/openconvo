@@ -178,6 +178,10 @@ pass, or it doesn't land.
 
 ## Before a change lands
 
+- Changes land through a pull request: `main` accepts only squash or rebase
+  merges whose CI checks passed, and published `v*` tags cannot be moved or
+  deleted. Both are repository rulesets with no bypass, so a deliberate
+  exception means editing the ruleset first.
 - One focused change per commit or branch, with a clear description of the
   behavior change and tests alongside it.
 - `make lint` and `make test-db` must pass. CI does not invoke the make targets

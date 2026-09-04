@@ -62,7 +62,7 @@ a copy you hold, rather than a summary that replaces it.
   channels worth keeping, and OpenConvo backfills their full history, then
   stays synchronized live: messages, edits, deletions, reactions, threads and
   attachments, not just the questions that got answered. Sync resumes after
-  restarts and repairs anything it missed while disconnected.
+  restarts and catches up on what it missed while disconnected.
 - **Preserve context, not just messages.** Browse channels, threads and message
   timelines behind an administrator login. Permanent links open any message
   in its surrounding conversation, so an answer still makes sense years after
@@ -155,6 +155,13 @@ Capturing community chat carries real responsibility. OpenConvo archives only
 explicitly selected guild channels and never DMs, honors message deletions,
 and keeps archives private by default. See
 [docs/architecture.md](docs/architecture.md#privacy-and-deletion).
+
+The software gives you the controls; the authority to use them is yours.
+Archive only servers you administer or have the owner's permission to archive,
+tell your members which channels are archived and who can read the archive,
+decide how long you keep it and who may search it, and stay within Discord's
+Terms of Service and Developer Policy and the law that applies to you and your
+members.
 
 ## Contributing
 
