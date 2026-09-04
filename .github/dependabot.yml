@@ -16,10 +16,19 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    # Major versions of the frontend toolchain are deliberate upgrades, not
+    # weekly chores; minor and patch updates still arrive in the group.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    # The frontend builds on the Node LTS line; a new major is a decision.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

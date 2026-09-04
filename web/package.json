@@ -1,6 +1,6 @@
 {
   "name": "openconvo-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenConvo's web interface, built into the Go binary that serves it.",
   "license": "AGPL-3.0-or-later",
   "private": true,

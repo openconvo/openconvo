@@ -22,7 +22,7 @@ has nothing extra to do; see [running without Docker](#running-without-docker)
 if you supply your own PostgreSQL.
 
 ```bash
-git clone --branch v0.1.0 --depth 1 https://github.com/openconvo/openconvo
+git clone --branch v0.1.1 --depth 1 https://github.com/openconvo/openconvo
 cd openconvo
 
 ./scripts/install.sh
@@ -75,7 +75,7 @@ docker compose pull openconvo
 docker compose up -d
 ```
 
-The guided installer pulls the exact `ghcr.io/openconvo/openconvo:0.1.0`
+The guided installer pulls the exact `ghcr.io/openconvo/openconvo:0.1.1`
 image selected by this release. A missing image, registry authentication
 problem, or network failure stops with the original error; none of those
 conditions silently substitutes source code. To deliberately install a build
@@ -115,9 +115,9 @@ v0.1.1 an SBOM attestation as well, through GitHub's artifact attestation
 service. With the [GitHub CLI](https://cli.github.com/) installed:
 
 ```bash
-docker pull ghcr.io/openconvo/openconvo:0.1.0
-docker run --rm ghcr.io/openconvo/openconvo:0.1.0 version
-gh attestation verify oci://ghcr.io/openconvo/openconvo:0.1.0 -R openconvo/openconvo
+docker pull ghcr.io/openconvo/openconvo:0.1.1
+docker run --rm ghcr.io/openconvo/openconvo:0.1.1 version
+gh attestation verify oci://ghcr.io/openconvo/openconvo:0.1.1 -R openconvo/openconvo
 ```
 
 `version` prints the release version and the commit its tag points to, and
