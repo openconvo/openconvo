@@ -17,6 +17,9 @@ jobs:
     name: Publish container image
     needs: checks
     runs-on: ubuntu-latest
+    # The build should finish in minutes; fail fast instead of occupying a
+    # runner for hours if it hangs.
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write

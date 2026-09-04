@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
-# Stage 1: build the React frontend.
-FROM node:22-alpine AS web
+# Stage 1: build the React frontend. Its output is platform-independent, so the
+# stage is pinned to the build host and never runs under emulation.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -11,18 +12,23 @@ COPY web/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 2: compile the Go binary with the frontend embedded.
-FROM golang:1.26.6-alpine AS build
+# Stage 2: compile the Go binary with the frontend embedded. Also pinned to the
+# build host: Go cross-compiles for the target platform natively, which is far
+# faster and more reliable than emulating the toolchain under QEMU.
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/internal/web/dist internal/web/dist
 
+# BuildKit populates these from the platform being built for.
+ARG TARGETOS
+ARG TARGETARCH
 ARG VERSION=0.1.0-dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
     -ldflags "-s -w \
       -X github.com/openconvo/openconvo/internal/version.Version=${VERSION} \
       -X github.com/openconvo/openconvo/internal/version.Commit=${COMMIT} \
