@@ -91,7 +91,7 @@ runcmd:
   - systemctl restart caddy
 
   # OpenConvo itself, ready for the installer.
-  - git clone --branch v0.1.0 --depth 1 https://github.com/openconvo/openconvo /opt/openconvo
+  - git clone --branch v0.1.1 --depth 1 https://github.com/openconvo/openconvo /opt/openconvo
 
 final_message: |
   OpenConvo's dependencies are installed. Caddy is serving the domain in the

@@ -92,7 +92,7 @@ All you need is Docker with Compose, on any host that can run two small
 containers; a 1 GB VPS is fine.
 
 ```bash
-git clone --branch v0.1.0 --depth 1 https://github.com/openconvo/openconvo
+git clone --branch v0.1.1 --depth 1 https://github.com/openconvo/openconvo
 cd openconvo
 
 ./scripts/install.sh
