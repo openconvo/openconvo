@@ -133,7 +133,8 @@ func (s *Service) searchByVector(ctx context.Context, generationID, queryVector 
 		       m.source_created_at,
 		       CASE WHEN char_length(m.content) > 500
 		            THEN left(m.content, 500) || '…' ELSE m.content END,
-		       EXISTS (SELECT 1 FROM attachments att WHERE att.message_id = m.id)
+		       EXISTS (SELECT 1 FROM attachments att WHERE att.message_id = m.id),
+		       e.embedding <=> $1::vector
 		FROM derived.message_embeddings e
 		JOIN messages m ON m.id = e.message_id
 		JOIN channels ch ON ch.id = m.channel_id
@@ -152,13 +153,15 @@ func (s *Service) searchByVector(ctx context.Context, generationID, queryVector 
 		var result archive.SearchResult
 		var actorID, username, displayName, avatarURL *string
 		var isBot *bool
+		var distance float64
 		if err := rows.Scan(
 			&result.MessageID, &result.ChannelID, &result.ChannelName, &result.CommunityName,
 			&actorID, &username, &displayName, &avatarURL, &isBot,
-			&result.SourceCreatedAt, &result.Excerpt, &result.HasAttachment,
+			&result.SourceCreatedAt, &result.Excerpt, &result.HasAttachment, &distance,
 		); err != nil {
 			return archive.SearchPage{}, fmt.Errorf("scan semantic result: %w", err)
 		}
+		result.Distance = &distance
 		if actorID != nil {
 			result.Actor = &archive.ArchiveActor{ID: *actorID}
 			if username != nil {

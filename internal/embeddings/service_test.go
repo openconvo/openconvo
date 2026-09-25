@@ -139,6 +139,17 @@ func TestSemanticSearchRanksAndFiltersDerivedMessages(t *testing.T) {
 		t.Fatalf("semantic result = %+v", page.Results[0])
 	}
 
+	all, err := service.SearchMessages(ctx, archive.SearchParams{Query: "advice for bonding wood"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all.Results) != 2 || all.Results[0].Distance == nil || all.Results[1].Distance == nil {
+		t.Fatalf("semantic results without distances = %+v", all.Results)
+	}
+	if near, far := *all.Results[0].Distance, *all.Results[1].Distance; near < 0 || near > 0.01 || far < 0.9 {
+		t.Fatalf("distances = %v, %v; want the first message close and the second far", near, far)
+	}
+
 	attachmentOnly := true
 	before := base.Add(12 * time.Hour)
 	filtered, err := service.SearchMessages(ctx, archive.SearchParams{

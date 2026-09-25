@@ -142,9 +142,12 @@ agent has to respect. `.claude/` holds the shared Claude Code setup:
   read, not a sandbox: a shell command can still reach either path.
 - `skills/running-locally/`: running the server outside Docker.
 
-`.mcp.json` at the root *describes* one server (OpenConvo's own read-only
-`search_messages`, over `docker compose exec` against your local install),
-but describing is not enabling: nothing runs until you approve it.
+`.mcp.json.example` describes one server: the read-only MCP tools of an
+OpenConvo deployment you run. To use it, copy it to `.mcp.json`, set the URL,
+and export `OPENCONVO_MCP_TOKEN` in the shell that starts Claude Code.
+`.mcp.json` is gitignored, so an endpoint or token you put in it never lands
+in a commit. [MCP search](docs/mcp.md) also covers local stdio against a
+Compose install.
 
 Beyond that, the checked-in setup enables no plugins and no MCP servers; those
 are personal choices, not repository ones. Keep yours in

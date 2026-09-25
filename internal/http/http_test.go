@@ -400,6 +400,7 @@ type fakeArchive struct {
 	messagePage archive.MessagePage
 	contexts    map[string]archive.MessageContext
 	searchPage  archive.SearchPage
+	searchErr   error
 	searches    []archive.SearchParams
 	attachments map[string]archive.StoredAttachment
 	// attachmentLookups records every ID that reached the store, so a test
@@ -460,7 +461,7 @@ func (f *fakeArchive) GetMessageContext(_ context.Context, id string, before, af
 
 func (f *fakeArchive) SearchMessages(_ context.Context, params archive.SearchParams) (archive.SearchPage, error) {
 	f.searches = append(f.searches, params)
-	return f.searchPage, nil
+	return f.searchPage, f.searchErr
 }
 
 type fakeSemanticSearch struct {
@@ -831,6 +832,17 @@ func TestSemanticSearchEndpointErrors(t *testing.T) {
 		if rec.Code != tc.want {
 			t.Errorf("error %v: status %d, want %d (%s)", tc.err, rec.Code, tc.want, rec.Body.String())
 		}
+	}
+}
+
+func TestSearchEndpointExplainsUnsearchableQuery(t *testing.T) {
+	fake := newFakeArchive()
+	fake.searchErr = archive.ErrQueryNotSearchable
+	handler := newTestHandler(Deps{Archive: fake})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/search?q=%F0%9F%94%A5", nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "emoji") {
+		t.Fatalf("unsearchable query: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

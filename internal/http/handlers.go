@@ -365,6 +365,9 @@ func handleSearch(deps Deps) http.HandlerFunc {
 		}
 		if err != nil {
 			switch {
+			case errors.Is(err, archive.ErrQueryNotSearchable):
+				writeError(w, http.StatusBadRequest, "query has no searchable words; keyword search ignores emoji and punctuation")
+				return
 			case errors.Is(err, embeddings.ErrDisabled):
 				writeError(w, http.StatusConflict, "semantic search is disabled; enable message embeddings in Settings")
 				return

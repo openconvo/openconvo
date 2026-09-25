@@ -85,7 +85,7 @@ internal/jobs         PostgreSQL-backed job queue and worker
 internal/backups      scheduled pg_dump execution, S3 storage and retention
 internal/preservation portable export, verification, deletion-ledger replay
 internal/embeddings   optional OpenAI generation + disposable pgvector index
-internal/mcpserver    one read-only MCP search tool over stdio or HTTP
+internal/mcpserver    read-only MCP search and reading tools over stdio or HTTP
 internal/updates      cached, read-only GitHub release checking
 internal/discord      Discord source: REST client, rate limiting, Gateway, normalization
 internal/ingest       the single archive write path shared by live sync and backfill
@@ -321,14 +321,20 @@ browsable, matching the archive-preservation contract.
 ## Search
 
 PostgreSQL full-text search. `messages.search_vector` is a stored generated
-column using the `simple` configuration; communities are frequently not
-English-speaking, and `simple` behaves predictably across languages.
-Language-aware stemming can be added later as a derived, rebuildable index.
+column using `openconvo_search`: the `simple` configuration with accents
+folded first by the `unaccent` dictionary from PostgreSQL's contrib modules.
+Communities are frequently not English-speaking, and both steps behave
+predictably across languages: `café` and `cafe` match, while other word forms
+stay distinct. Language-aware stemming can be added later as a derived,
+rebuildable index.
 
 `GET /api/v1/search` uses `websearch_to_tsquery` for plain text and quoted
 phrases, ranks matching live messages, and supports channel, author, date and
-attachment filters. PostgreSQL also generates bounded highlighted excerpts.
-The authenticated `/search` UI renders those excerpts as inert text and links
+attachment filters. PostgreSQL also generates highlighted excerpts: a message
+up to 500 characters whole, a longer one as a passage around the match with
+an ellipsis wherever text was cut. A query with no searchable words, such as
+emoji alone, is rejected rather than answered with an empty page. The
+authenticated `/search` UI renders those excerpts as inert text and links
 each result to the stable `/messages/:id` conversation-context route.
 
 When `mode=semantic`, the derived embeddings service sends only the search
@@ -338,19 +344,22 @@ privacy rules, filters, pagination limits, and context links apply. Keyword
 mode remains the default and stays entirely local; semantic provider failure
 does not affect full-text search.
 
-The MCP adapter exposes those two search paths as a single `search_messages`
-tool. `openconvo mcp` uses stdio in a separate process that does not start
-migrations, ingestion, jobs, an HTTP listener, or embedding generation. An
-opt-in Streamable HTTP transport mounts `/mcp` on the existing application
-listener. It sits outside browser session authentication and instead requires
+The MCP adapter exposes those two search paths as a `search_messages` tool,
+whose hits carry the message itself (content capped at 2,000 characters) from
+the same read the timeline uses. It exposes the conversational context route
+as `get_message_context` and the archive browser's channel list as
+`list_channels`. `openconvo mcp` uses stdio in a separate process that does
+not start migrations, ingestion, jobs, an HTTP listener, or embedding
+generation. An opt-in Streamable HTTP transport mounts `/mcp` on the existing
+application listener. It sits outside browser session authentication and instead requires
 its own bearer token; when disabled, the route is an explicit 404 rather than
 the SPA fallback. It uses a separate, bounded read-only PostgreSQL pool and
 must be exposed through a TLS-terminating reverse proxy.
 
 Both transports offer no raw SQL, resources, prompts, or write tools, and
-return a reduced result that omits actor UUIDs and avatar URLs. This is an
-operator-controlled reader integration, not an LLM-generated canonical or
-derived archive feature.
+return a reduced result that omits actor UUIDs, avatar URLs, attachment URLs
+and bookmarks. This is an operator-controlled reader integration, not an
+LLM-generated canonical or derived archive feature.
 
 ## Curation
 

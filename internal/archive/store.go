@@ -1440,6 +1440,20 @@ func (s *Store) GetMessageContext(ctx context.Context, messageID string, beforeC
 	return MessageContext{Channel: channel, TargetID: messageID, Messages: messages}, true, nil
 }
 
+// GetArchiveMessages loads the live messages among ids, in no particular
+// order. Deleted and unknown IDs are left out.
+func (s *Store) GetArchiveMessages(ctx context.Context, ids []string) ([]ArchiveMessage, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, archiveMessageSelect+`
+		WHERE m.id = ANY($1::uuid[]) AND m.deleted_at IS NULL`, ids)
+	if err != nil {
+		return nil, err
+	}
+	return scanArchiveMessages(rows)
+}
+
 // SearchMessages performs relevance-ranked full-text search over live
 // canonical messages. The generated search_vector and every value returned by
 // this method are derived from canonical rows, so the search layer can always
@@ -1493,18 +1507,23 @@ func (s *Store) SearchMessages(ctx context.Context, in SearchParams) (SearchPage
 
 	limitArg := addArg(limit + 1)
 	offsetArg := addArg(in.Offset)
+	// Messages up to 500 characters are highlighted whole: ts_headline would
+	// otherwise cut even a short one.
 	rows, err := s.pool.Query(ctx, `
 		SELECT m.id::text, m.channel_id::text, ch.name, co.name,
 		       a.id::text, a.username, a.display_name, a.avatar_url, a.is_bot,
-		       m.source_created_at,
-		       ts_headline('simple', COALESCE(m.content, ''), search.query,
-		           'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15'),
+		       m.source_created_at, COALESCE(m.content, ''),
+		       ts_headline('openconvo_search', COALESCE(m.content, ''), search.query,
+		           CASE WHEN char_length(m.content) <= 500
+		                THEN 'StartSel=<mark>, StopSel=</mark>, HighlightAll=true'
+		                ELSE 'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15'
+		           END),
 		       EXISTS (SELECT 1 FROM attachments att WHERE att.message_id = m.id)
 		FROM messages m
 		JOIN channels ch ON ch.id = m.channel_id
 		JOIN communities co ON co.id = ch.community_id
 		LEFT JOIN actors a ON a.id = m.actor_id
-		CROSS JOIN LATERAL websearch_to_tsquery('simple', $1) AS search(query)
+		CROSS JOIN LATERAL websearch_to_tsquery('openconvo_search', $1) AS search(query)
 		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY ts_rank_cd(m.search_vector, search.query) DESC,
 		         m.source_created_at DESC, m.id DESC
@@ -1519,13 +1538,15 @@ func (s *Store) SearchMessages(ctx context.Context, in SearchParams) (SearchPage
 		var result SearchResult
 		var actorID, username, displayName, avatarURL *string
 		var isBot *bool
+		var content string
 		if err := rows.Scan(
 			&result.MessageID, &result.ChannelID, &result.ChannelName, &result.CommunityName,
 			&actorID, &username, &displayName, &avatarURL, &isBot,
-			&result.SourceCreatedAt, &result.Excerpt, &result.HasAttachment,
+			&result.SourceCreatedAt, &content, &result.Excerpt, &result.HasAttachment,
 		); err != nil {
 			return SearchPage{}, err
 		}
+		result.Excerpt = markTrimmed(content, result.Excerpt)
 		if actorID != nil {
 			result.Actor = &ArchiveActor{ID: *actorID}
 			if username != nil {
@@ -1546,11 +1567,50 @@ func (s *Store) SearchMessages(ctx context.Context, in SearchParams) (SearchPage
 	if err := rows.Err(); err != nil {
 		return SearchPage{}, err
 	}
+	if len(results) == 0 {
+		var nothingToSearch bool
+		if err := s.pool.QueryRow(ctx,
+			`SELECT numnode(websearch_to_tsquery('openconvo_search', $1)) = 0`, query).Scan(&nothingToSearch); err != nil {
+			return SearchPage{}, err
+		}
+		if nothingToSearch {
+			return SearchPage{}, ErrQueryNotSearchable
+		}
+	}
 	hasMore := len(results) > limit
 	if hasMore {
 		results = results[:limit]
 	}
 	return SearchPage{Results: results, HasMore: hasMore}, nil
+}
+
+// ErrQueryNotSearchable reports a keyword query with no searchable words,
+// such as emoji or punctuation alone.
+var ErrQueryNotSearchable = errors.New("archive: query has no searchable words")
+
+var stripHighlights = strings.NewReplacer("<mark>", "", "</mark>", "")
+
+// markTrimmed adds an ellipsis on each side where a keyword excerpt leaves
+// out part of the message.
+func markTrimmed(content, excerpt string) string {
+	fragment := stripHighlights.Replace(excerpt)
+	whole := stripHighlights.Replace(content)
+	if strings.TrimSpace(fragment) == "" || fragment == whole {
+		return excerpt
+	}
+	start := strings.Index(whole, fragment)
+	if start < 0 {
+		// ts_headline blanks tag-like tokens such as <:emoji:id> in a cut
+		// passage, which then cannot be placed.
+		return "…" + excerpt + "…"
+	}
+	if strings.TrimSpace(whole[:start]) != "" {
+		excerpt = "…" + excerpt
+	}
+	if strings.TrimSpace(whole[start+len(fragment):]) != "" {
+		excerpt += "…"
+	}
+	return excerpt
 }
 
 // ---------------------------------------------------------------------------

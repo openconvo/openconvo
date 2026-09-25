@@ -207,7 +207,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			APIKey:   cfg.OpenAIAPIKey,
 		}, logger)
 		mcpProtocol := mcpserver.New(mcpserver.Deps{
-			Keyword: archive.New(mcpPool), Semantic: mcpSemantic, Logger: logger,
+			Archive: archive.New(mcpPool), Semantic: mcpSemantic, Logger: logger,
 		}, version.Version)
 		httpDeps.MCP, err = mcpserver.NewHTTPHandler(mcpProtocol, cfg.MCPToken, logger)
 		if err != nil {

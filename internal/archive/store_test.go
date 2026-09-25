@@ -440,6 +440,118 @@ func TestSearchMessagesNegatedQueryWithNullContent(t *testing.T) {
 	}
 }
 
+func TestSearchIgnoresAccents(t *testing.T) {
+	ctx, _, store, channel, actor := fixture(t)
+	base := time.Date(2026, 3, 4, 9, 0, 0, 0, time.UTC)
+	accented, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "accent-1",
+		Content: strPtr("Crème brûlée needs one œuf per ramekin."), SourceCreatedAt: base,
+	})
+	if err != nil {
+		t.Fatalf("accented message: %v", err)
+	}
+	plain, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "accent-2",
+		Content: strPtr("creme brulee without oeuf?"), SourceCreatedAt: base.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("plain message: %v", err)
+	}
+
+	for _, query := range []string{"crème", "creme", "CRÈME", "oeuf", "œuf"} {
+		page, err := store.SearchMessages(ctx, archive.SearchParams{Query: query})
+		if err != nil {
+			t.Fatalf("search %q: %v", query, err)
+		}
+		found := map[string]string{}
+		for _, result := range page.Results {
+			found[result.MessageID] = result.Excerpt
+		}
+		if len(found) != 2 || found[accented.ID] == "" || found[plain.ID] == "" {
+			t.Errorf("search %q found %v, want both messages", query, found)
+		}
+		if query == "creme" && !strings.Contains(found[accented.ID], "<mark>Crème</mark>") {
+			t.Errorf("excerpt lost the accent as written: %q", found[accented.ID])
+		}
+	}
+}
+
+func TestSearchRejectsQueriesWithoutSearchableWords(t *testing.T) {
+	ctx, _, store, channel, actor := fixture(t)
+	if _, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "fire",
+		Content: strPtr("Nice work 🔥"), SourceCreatedAt: time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("message: %v", err)
+	}
+	for _, query := range []string{"🔥", "?!", `"…"`} {
+		if _, err := store.SearchMessages(ctx, archive.SearchParams{Query: query}); !errors.Is(err, archive.ErrQueryNotSearchable) {
+			t.Errorf("search %q error = %v, want ErrQueryNotSearchable", query, err)
+		}
+	}
+	page, err := store.SearchMessages(ctx, archive.SearchParams{Query: "zebra"})
+	if err != nil || len(page.Results) != 0 {
+		t.Fatalf("a word nobody wrote = %+v, %v; want an empty page", page, err)
+	}
+}
+
+func TestSearchExcerptsAreWholeOrMarkedAsTrimmed(t *testing.T) {
+	ctx, _, store, channel, actor := fixture(t)
+	base := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+	short := "The opening sentence sets the scene with a handful of ordinary words, " +
+		"then the marker shows up somewhere in the middle of the message, " +
+		"and a closing sentence adds a few more words after it."
+	filler := strings.Repeat("Some filler text keeps this message long enough to be cut. ", 10)
+	long := filler + "Here the marker sits on its own. " + filler
+	tagged := filler + "Here the marker <:emoji:42> sits beside <t:1700000000:R> tags. " + filler
+	ids := map[string]string{}
+	for i, content := range []string{short, long, tagged} {
+		message, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+			ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: fmt.Sprintf("excerpt-%d", i),
+			Content: strPtr(content), SourceCreatedAt: base.Add(time.Duration(i) * time.Hour),
+		})
+		if err != nil {
+			t.Fatalf("message %d: %v", i, err)
+		}
+		ids[message.ID] = content
+	}
+
+	page, err := store.SearchMessages(ctx, archive.SearchParams{Query: "marker"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(page.Results) != 3 {
+		t.Fatalf("results = %+v, want all three messages", page.Results)
+	}
+	unmark := strings.NewReplacer("<mark>", "", "</mark>", "")
+	for _, result := range page.Results {
+		if !strings.Contains(result.Excerpt, "<mark>marker</mark>") {
+			t.Errorf("excerpt does not highlight the match: %q", result.Excerpt)
+		}
+		switch content := ids[result.MessageID]; content {
+		case short:
+			if got := unmark.Replace(result.Excerpt); got != short {
+				t.Errorf("short message excerpt = %q, want the whole message", got)
+			}
+		case long:
+			if !strings.HasPrefix(result.Excerpt, "…") || !strings.HasSuffix(result.Excerpt, "…") {
+				t.Errorf("long message excerpt does not mark both cuts: %q", result.Excerpt)
+			}
+			inner := unmark.Replace(strings.TrimSuffix(strings.TrimPrefix(result.Excerpt, "…"), "…"))
+			if !strings.Contains(long, inner) {
+				t.Errorf("excerpt %q is not a passage of the message", inner)
+			}
+		case tagged:
+			// ts_headline blanks the emoji and timestamp, so this cut cannot be placed.
+			if !strings.HasPrefix(result.Excerpt, "…") || !strings.HasSuffix(result.Excerpt, "…") {
+				t.Errorf("tagged message excerpt does not mark both cuts: %q", result.Excerpt)
+			}
+		default:
+			t.Errorf("unexpected result %+v", result)
+		}
+	}
+}
+
 func TestBookmarkLifecycle(t *testing.T) {
 	ctx, _, store, channel, actor := fixture(t)
 	message, err := store.UpsertMessage(ctx, archive.MessageUpsert{
@@ -1096,6 +1208,71 @@ func TestSyncOverviewIncludesThreads(t *testing.T) {
 	}
 	if !found {
 		t.Error("enabled channel missing from overview")
+	}
+}
+
+func TestGetArchiveMessages(t *testing.T) {
+	ctx, _, store, channel, actor := fixture(t)
+	base := time.Date(2026, 3, 3, 9, 0, 0, 0, time.UTC)
+	question, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "read-question",
+		Content: strPtr("What time is the meetup?"), SourceCreatedAt: base,
+	})
+	if err != nil {
+		t.Fatalf("question: %v", err)
+	}
+	answer, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "read-answer", Kind: "reply",
+		Content: strPtr("Seven, at the library."), ReplyToExternalID: strPtr("read-question"),
+		SourceCreatedAt: base.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	if _, err := store.UpsertAttachment(ctx, archive.AttachmentUpsert{
+		MessageID: answer.ID, ExternalID: "read-attachment", Filename: "map.png",
+		ContentType: "image/png", Size: 2048,
+	}); err != nil {
+		t.Fatalf("attachment: %v", err)
+	}
+	if err := store.SetReaction(ctx, answer.ID, "👍", "👍", 3, nil); err != nil {
+		t.Fatalf("reaction: %v", err)
+	}
+	gone, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "read-gone",
+		Content: strPtr("Deleted text."), SourceCreatedAt: base.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("deleted message: %v", err)
+	}
+	if found, err := store.MarkMessageDeleted(ctx, archive.SourceDiscord, channel.ID, gone.ExternalID, gone.SourceCreatedAt); err != nil || !found {
+		t.Fatalf("delete: found=%v err=%v", found, err)
+	}
+
+	messages, err := store.GetArchiveMessages(ctx, []string{
+		answer.ID, gone.ID, question.ID, "00000000-0000-4000-8000-000000000000",
+	})
+	if err != nil {
+		t.Fatalf("GetArchiveMessages: %v", err)
+	}
+	byID := map[string]archive.ArchiveMessage{}
+	for _, message := range messages {
+		byID[message.ID] = message
+	}
+	if len(messages) != 2 || byID[question.ID].ID == "" || byID[answer.ID].ID == "" {
+		t.Fatalf("messages = %+v, want the question and the answer only", messages)
+	}
+	got := byID[answer.ID]
+	if got.Content == nil || *got.Content != "Seven, at the library." || got.Kind != "reply" ||
+		got.ReplyTo == nil || got.ReplyTo.ID != question.ID ||
+		len(got.Attachments) != 1 || got.Attachments[0].Filename != "map.png" ||
+		len(got.Reactions) != 1 || got.Reactions[0].Count != 3 {
+		t.Errorf("answer = %+v", got)
+	}
+
+	none, err := store.GetArchiveMessages(ctx, nil)
+	if err != nil || len(none) != 0 {
+		t.Fatalf("no IDs = %+v, %v; want none", none, err)
 	}
 }
 

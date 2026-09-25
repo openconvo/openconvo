@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# A personal MCP client setup names an endpoint and may hold a token;
+# .mcp.json.example is the template.
+.mcp.json
 
 # Build artifacts
 bin/

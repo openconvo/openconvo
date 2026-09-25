@@ -175,6 +175,47 @@ func TestRetrySizeMismatchMigrationTouchesOnlyItsOwnVerdict(t *testing.T) {
 	}
 }
 
+// pg_restore --clean of a pre-0003 dump leaves 0003's configuration behind.
+func TestFoldAccentsMigrationRerunsOverARestoredOlderDump(t *testing.T) {
+	pool := testutil.NewDB(t)
+	ctx := context.Background()
+
+	if _, err := pool.Exec(ctx, `
+		ALTER TABLE messages DROP COLUMN search_vector;
+		ALTER TABLE messages ADD COLUMN search_vector tsvector
+		    GENERATED ALWAYS AS (to_tsvector('simple', coalesce(content, ''))) STORED;
+		CREATE INDEX messages_search_idx ON messages USING gin (search_vector);
+		DELETE FROM schema_migrations WHERE version = 3;
+		WITH c AS (
+			INSERT INTO communities (source, external_id, name)
+			VALUES ('discord', 'g1', 'guild') RETURNING id
+		), ch AS (
+			INSERT INTO channels (community_id, external_id, kind, name)
+			SELECT c.id, 'c1', 'text', 'general' FROM c RETURNING id
+		)
+		INSERT INTO messages (channel_id, external_id, content, source_created_at)
+		SELECT ch.id, 'm1', 'Crème brûlée', now() FROM ch`); err != nil {
+		t.Fatalf("restore the pre-0003 shape: %v", err)
+	}
+
+	applied, err := database.Migrate(ctx, pool)
+	if err != nil {
+		t.Fatalf("Migrate over the restored dump: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("applied %d migrations, want 0003 again", applied)
+	}
+	var matches int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM messages
+		WHERE search_vector @@ websearch_to_tsquery('openconvo_search', 'creme')`).Scan(&matches); err != nil {
+		t.Fatal(err)
+	}
+	if matches != 1 {
+		t.Fatalf("restored message matches creme %d times, want 1", matches)
+	}
+}
+
 func TestSchemaVersionOnEmptyDatabase(t *testing.T) {
 	pool := testutil.NewDB(t)
 	ctx := context.Background()
