@@ -1,10 +1,12 @@
 package mcpserver
 
 import (
+	"context"
 	"time"
 	"unicode/utf8"
 
 	"github.com/openconvo/openconvo/internal/archive"
+	"github.com/openconvo/openconvo/internal/discord/markup"
 )
 
 // searchContentLimit caps each search result's content, in characters.
@@ -89,6 +91,14 @@ func messageView(m archive.ArchiveMessage, limit int) Message {
 		out.Reactions = append(out.Reactions, Reaction{Emoji: emoji, Count: r.Count})
 	}
 	return out
+}
+
+// renderMarkup renders Discord markup for reading. If names cannot be looked
+// up, the answer goes out with the markup as written.
+func renderMarkup(ctx context.Context, deps Deps, texts ...markup.Text) {
+	if err := markup.Render(ctx, deps.Archive, texts...); err != nil {
+		deps.Logger.Warn("render message markup", "error", err)
+	}
 }
 
 func authorView(actor *archive.ArchiveActor) *Author {

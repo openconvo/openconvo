@@ -17,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/openconvo/openconvo/internal/archive"
+	"github.com/openconvo/openconvo/internal/discord/markup"
 	"github.com/openconvo/openconvo/internal/embeddings"
 )
 
@@ -91,6 +92,7 @@ type Archive interface {
 	ListArchiveChannels(ctx context.Context) ([]archive.ArchiveChannel, error)
 	GetArchiveMessages(ctx context.Context, ids []string) ([]archive.ArchiveMessage, error)
 	GetMessageContext(ctx context.Context, messageID string, beforeCount, afterCount int) (archive.MessageContext, bool, error)
+	DisplayNames(ctx context.Context, source string, actorIDs, channelIDs, messageIDs []string) (map[string]string, map[string]string, error)
 }
 
 // Deps are the read-only implementations exposed by the MCP server.
@@ -180,18 +182,12 @@ func New(deps Deps, serverVersion string) *mcp.Server {
 }
 
 const searchDescription = "Search live, non-deleted archived messages. " +
-	"mode fts (the default) runs full-text search locally and matches whole words, ignoring letter case and accents: " +
-	"cafe finds café, but bake does not find baked, so list the word forms you need with or. " +
-	"It has no wildcards, ignores emoji and punctuation, and matches a web address only as a whole host such as www.example.com. " +
-	"mode semantic matches meaning across wording and languages, and each result carries a distance: lower is closer, " +
-	"and a best result that is still distant means nothing relevant was found. " +
-	"Each result carries the message's text in content, cut at 2000 characters with … and content_truncated; " +
-	"get_message_context returns a message in full with the conversation around it. " +
-	"In fts mode, excerpt shows the matching passage with matches wrapped in <mark></mark>, " +
-	"starting or ending with … where it leaves text out. " +
-	"A date without a time means midnight UTC; to cover a local day, pass RFC3339 timestamps with the offset. " +
-	"list_channels gives the IDs for channel_id. " +
-	"Supports the same channel, author, date, attachment, and pagination filters as OpenConvo's search page."
+	"Default fts matches whole words locally, ignoring letter case and accents; emoji and punctuation alone are not searchable. " +
+	"semantic sends only the query to OpenAI and returns cosine distance (lower is closer). " +
+	"Results include content, cut at 2000 characters with …, and fts excerpts with <mark> highlights and … for omitted text. " +
+	"Mentions display as @name or #channel where known, but search indexes the original ID markup. " +
+	"Use get_message_context for full text and surrounding messages, and list_channels for channel IDs. " +
+	"Date-only bounds mean midnight UTC."
 
 func searchHandler(deps Deps) mcp.ToolHandlerFor[searchInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input searchInput) (*mcp.CallToolResult, SearchOutput, error) {
@@ -234,10 +230,17 @@ func searchHandler(deps Deps) mcp.ToolHandlerFor[searchInput, SearchOutput] {
 			deps.Logger.Error("load search results", "mode", mode, "error", err)
 			return nil, SearchOutput{}, errors.New("search failed")
 		}
+		texts := make([]markup.Text, 0, len(messages)+len(page.Results))
 		byID := make(map[string]archive.ArchiveMessage, len(messages))
 		for _, message := range messages {
 			byID[message.ID] = message
+			texts = append(texts, markup.Text{MessageID: message.ID, Value: message.Content})
 		}
+		for i := range page.Results {
+			texts = append(texts, markup.Text{MessageID: page.Results[i].MessageID, Value: &page.Results[i].Excerpt})
+		}
+		// Before messageView caps the content, so a cut never splits a mention.
+		renderMarkup(ctx, deps, texts...)
 
 		output := SearchOutput{
 			Results: make([]SearchResult, 0, len(page.Results)),

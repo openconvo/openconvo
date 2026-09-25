@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -1454,6 +1455,81 @@ func (s *Store) GetArchiveMessages(ctx context.Context, ids []string) ([]Archive
 	return scanArchiveMessages(rows)
 }
 
+// DisplayNames returns the names of the actors and channels with the given
+// IDs on source, keyed by ID. Someone who never posted has no actor row, so
+// the "mentions" in the raw payloads of messageIDs name them instead, as
+// sticker_items does in archiveMessageSelect. A channel is named only when
+// selected for archiving or retained in the archive. Discord visibility is
+// not a reliable privacy test for a discovered but unselected channel.
+func (s *Store) DisplayNames(ctx context.Context, source string, actorIDs, channelIDs, messageIDs []string) (map[string]string, map[string]string, error) {
+	actors, channels := map[string]string{}, map[string]string{}
+	if len(actorIDs) == 0 && len(channelIDs) == 0 {
+		return actors, channels, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT 'actor', a.external_id, COALESCE(NULLIF(a.display_name, ''), a.username, '')
+		FROM actors a
+		WHERE a.source = $1 AND a.external_id = ANY($2::text[])
+		UNION ALL
+		SELECT 'mentioned', mentioned.value->>'id',
+		       COALESCE(NULLIF(mentioned.value->>'global_name', ''), mentioned.value->>'username', '')
+		FROM messages m
+		JOIN channels ch ON ch.id = m.channel_id
+		JOIN communities co ON co.id = ch.community_id
+		CROSS JOIN LATERAL jsonb_array_elements(CASE
+		    WHEN jsonb_typeof(m.raw_payload->'mentions') = 'array'
+		    THEN m.raw_payload->'mentions' ELSE '[]'::jsonb
+		END) AS mentioned(value)
+		WHERE co.source = $1 AND m.id = ANY($4::uuid[]) AND m.deleted_at IS NULL
+		  AND jsonb_typeof(mentioned.value) = 'object'
+		  AND mentioned.value->>'id' = ANY($2::text[])
+		UNION ALL
+		SELECT 'channel', ch.external_id, ch.name
+		FROM channels ch
+		JOIN communities co ON co.id = ch.community_id
+		LEFT JOIN channels parent ON parent.id = ch.parent_channel_id
+		WHERE co.source = $1 AND ch.external_id = ANY($3::text[])
+		  AND (ch.archive_enabled
+		       OR COALESCE(parent.archive_enabled, false)
+		       OR EXISTS (
+		           SELECT 1 FROM messages kept
+		           WHERE kept.channel_id = ch.id AND kept.deleted_at IS NULL
+		       ))`,
+		source, actorIDs, channelIDs, messageIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	mentioned := map[string]string{}
+	for rows.Next() {
+		var kind, id, name string
+		if err := rows.Scan(&kind, &id, &name); err != nil {
+			return nil, nil, err
+		}
+		if name == "" {
+			continue
+		}
+		switch kind {
+		case "actor":
+			actors[id] = name
+		case "mentioned":
+			mentioned[id] = name
+		default:
+			channels[id] = name
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	// An actor row is current; a payload is as old as its message.
+	for id, name := range mentioned {
+		if _, ok := actors[id]; !ok {
+			actors[id] = name
+		}
+	}
+	return actors, channels, nil
+}
+
 // SearchMessages performs relevance-ranked full-text search over live
 // canonical messages. The generated search_vector and every value returned by
 // this method are derived from canonical rows, so the search layer can always
@@ -1507,13 +1583,16 @@ func (s *Store) SearchMessages(ctx context.Context, in SearchParams) (SearchPage
 
 	limitArg := addArg(limit + 1)
 	offsetArg := addArg(in.Offset)
-	// Messages up to 500 characters are highlighted whole: ts_headline would
-	// otherwise cut even a short one.
+	// Messages up to 500 characters are highlighted whole. Escape angle
+	// brackets first: ts_headline treats Discord's <:emoji:id> as an HTML
+	// tag and drops it from a cut passage.
 	rows, err := s.pool.Query(ctx, `
 		SELECT m.id::text, m.channel_id::text, ch.name, co.name,
 		       a.id::text, a.username, a.display_name, a.avatar_url, a.is_bot,
 		       m.source_created_at, COALESCE(m.content, ''),
-		       ts_headline('openconvo_search', COALESCE(m.content, ''), search.query,
+		       ts_headline('openconvo_search',
+		           replace(replace(replace(COALESCE(m.content, ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'),
+		           search.query,
 		           CASE WHEN char_length(m.content) <= 500
 		                THEN 'StartSel=<mark>, StopSel=</mark>, HighlightAll=true'
 		                ELSE 'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15'
@@ -1546,7 +1625,7 @@ func (s *Store) SearchMessages(ctx context.Context, in SearchParams) (SearchPage
 		); err != nil {
 			return SearchPage{}, err
 		}
-		result.Excerpt = markTrimmed(content, result.Excerpt)
+		result.Excerpt = html.UnescapeString(markTrimmed(escapeHeadlineText.Replace(content), result.Excerpt))
 		if actorID != nil {
 			result.Actor = &ArchiveActor{ID: *actorID}
 			if username != nil {
@@ -1589,25 +1668,25 @@ func (s *Store) SearchMessages(ctx context.Context, in SearchParams) (SearchPage
 var ErrQueryNotSearchable = errors.New("archive: query has no searchable words")
 
 var stripHighlights = strings.NewReplacer("<mark>", "", "</mark>", "")
+var escapeHeadlineText = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
-// markTrimmed adds an ellipsis on each side where a keyword excerpt leaves
-// out part of the message.
-func markTrimmed(content, excerpt string) string {
+// markTrimmed compares the headline with the HTML-escaped source so literal
+// <mark> in a message cannot be mistaken for a highlight delimiter.
+func markTrimmed(escapedContent, excerpt string) string {
 	fragment := stripHighlights.Replace(excerpt)
-	whole := stripHighlights.Replace(content)
-	if strings.TrimSpace(fragment) == "" || fragment == whole {
+	if strings.TrimSpace(fragment) == "" || fragment == escapedContent {
 		return excerpt
 	}
-	start := strings.Index(whole, fragment)
+	start := strings.Index(escapedContent, fragment)
 	if start < 0 {
-		// ts_headline blanks tag-like tokens such as <:emoji:id> in a cut
-		// passage, which then cannot be placed.
+		// A headline may normalize text outside the match, so its exact
+		// position in the source is not always recoverable.
 		return "…" + excerpt + "…"
 	}
-	if strings.TrimSpace(whole[:start]) != "" {
+	if strings.TrimSpace(escapedContent[:start]) != "" {
 		excerpt = "…" + excerpt
 	}
-	if strings.TrimSpace(whole[start+len(fragment):]) != "" {
+	if strings.TrimSpace(escapedContent[start+len(fragment):]) != "" {
 		excerpt += "…"
 	}
 	return excerpt

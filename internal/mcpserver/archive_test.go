@@ -29,7 +29,7 @@ func TestToolsReadTheArchiveStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	actor, err := store.UpsertActor(ctx, archive.ActorUpsert{
-		Source: archive.SourceDiscord, ExternalID: "mcp-user", Username: "alice", DisplayName: "Alice",
+		Source: archive.SourceDiscord, ExternalID: "111111111111111111", Username: "alice", DisplayName: "Alice",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +52,16 @@ func TestToolsReadTheArchiveStore(t *testing.T) {
 	deleted := post("mcp-deleted", "default", "A secret about the meetup.", nil, 2*time.Minute)
 	if found, err := store.MarkMessageDeleted(ctx, archive.SourceDiscord, channel.ID, deleted.ExternalID, deleted.SourceCreatedAt); err != nil || !found {
 		t.Fatalf("delete: found=%v err=%v", found, err)
+	}
+	thanks := post("mcp-thanks", "default", "Thanks <@111111111111111111>!", nil, 3*time.Minute)
+	// Only this message's payload names Bob, who never posted.
+	welcome, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "mcp-welcome",
+		Content: strPtr("Welcome <@222222222222222222>"), SourceCreatedAt: base.Add(4 * time.Minute),
+		RawPayload: json.RawMessage(`{"mentions":[{"id":"222222222222222222","username":"bob","global_name":"Bob"}]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	client := connectClient(t, Deps{Archive: store})
@@ -87,15 +97,22 @@ func TestToolsReadTheArchiveStore(t *testing.T) {
 	var channels ChannelsOutput
 	text = call("list_channels", map[string]any{}, &channels)
 	if len(channels.Channels) != 1 || channels.Channels[0].ChannelID != channel.ID ||
-		channels.Channels[0].Name != "help" || channels.Channels[0].MessageCount != 2 {
+		channels.Channels[0].Name != "help" || channels.Channels[0].MessageCount != 4 {
 		t.Fatalf("channels = %s", text)
 	}
 
 	var conversation ContextOutput
 	text = call("get_message_context", map[string]any{"message_id": strings.ToUpper(answer.ID)}, &conversation)
-	if len(conversation.Messages) != 2 || conversation.Messages[0].MessageID != question.ID ||
-		conversation.Messages[1].MessageID != answer.ID || conversation.MoreBefore || conversation.MoreAfter ||
+	if len(conversation.Messages) != 4 || conversation.Messages[0].MessageID != question.ID ||
+		conversation.Messages[1].MessageID != answer.ID || conversation.Messages[2].MessageID != thanks.ID ||
+		conversation.Messages[3].MessageID != welcome.ID || conversation.MoreBefore || conversation.MoreAfter ||
 		conversation.Channel.Name != "help" || strings.Contains(text, "secret") {
 		t.Fatalf("context = %s", text)
+	}
+	if got := conversation.Messages[2].Content; got != "Thanks @Alice!" {
+		t.Fatalf("mention rendered as %q", got)
+	}
+	if got := conversation.Messages[3].Content; got != "Welcome @Bob" {
+		t.Fatalf("mention of someone who never posted rendered as %q", got)
 	}
 }

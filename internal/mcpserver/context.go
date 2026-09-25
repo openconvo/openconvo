@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/openconvo/openconvo/internal/discord/markup"
 )
 
 // maxContextMessages bounds each side of a context window. The store is asked
@@ -86,6 +88,13 @@ func contextHandler(deps Deps) mcp.ToolHandlerFor[contextInput, ContextOutput] {
 		if !found || target < 0 {
 			return nil, ContextOutput{}, errors.New("message not found")
 		}
+
+		texts := make([]markup.Text, 0, len(conversation.Messages)+1)
+		for _, message := range conversation.Messages {
+			texts = append(texts, markup.Text{MessageID: message.ID, Value: message.Content})
+		}
+		texts = append(texts, markup.Text{Value: &conversation.Channel.Topic})
+		renderMarkup(ctx, deps, texts...)
 
 		earlier, later := conversation.Messages[:target], conversation.Messages[target+1:]
 		output := ContextOutput{

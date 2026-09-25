@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/openconvo/openconvo/internal/archive"
+	"github.com/openconvo/openconvo/internal/discord/markup"
 	"github.com/openconvo/openconvo/internal/embeddings"
 	"github.com/openconvo/openconvo/internal/version"
 )
@@ -201,6 +202,11 @@ func handleListArchiveChannels(deps Deps) http.HandlerFunc {
 		if channels == nil {
 			channels = []archive.ArchiveChannel{}
 		}
+		topics := make([]markup.Text, len(channels))
+		for i := range channels {
+			topics[i] = topicText(&channels[i])
+		}
+		renderMarkup(r.Context(), deps, topics...)
 		writeJSON(w, http.StatusOK, map[string]any{"channels": channels})
 	}
 }
@@ -245,6 +251,7 @@ func handleListMessages(deps Deps) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to list messages")
 			return
 		}
+		renderMarkup(r.Context(), deps, append(messageTexts(page.Messages), topicText(&channel))...)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"channel":   channel,
 			"messages":  page.Messages,
@@ -282,6 +289,7 @@ func handleMessageContext(deps Deps) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "message not found")
 			return
 		}
+		renderMarkup(r.Context(), deps, append(messageTexts(context.Messages), topicText(&context.Channel))...)
 		writeJSON(w, http.StatusOK, context)
 	}
 }
@@ -389,6 +397,11 @@ func handleSearch(deps Deps) http.HandlerFunc {
 		if page.Results == nil {
 			page.Results = []archive.SearchResult{}
 		}
+		excerpts := make([]markup.Text, len(page.Results))
+		for i := range page.Results {
+			excerpts[i] = markup.Text{MessageID: page.Results[i].MessageID, Value: &page.Results[i].Excerpt}
+		}
+		renderMarkup(r.Context(), deps, excerpts...)
 		writeJSON(w, http.StatusOK, page)
 	}
 }
@@ -417,6 +430,11 @@ func handleListBookmarks(deps Deps) http.HandlerFunc {
 		if bookmarks == nil {
 			bookmarks = []archive.Bookmark{}
 		}
+		contents := make([]markup.Text, len(bookmarks))
+		for i := range bookmarks {
+			contents[i] = markup.Text{MessageID: bookmarks[i].MessageID, Value: bookmarks[i].Content}
+		}
+		renderMarkup(r.Context(), deps, contents...)
 		writeJSON(w, http.StatusOK, map[string]any{"bookmarks": bookmarks})
 	}
 }
@@ -504,6 +522,7 @@ func handleCreateBookmark(deps Deps) http.HandlerFunc {
 		if created {
 			code = http.StatusCreated
 		}
+		renderMarkup(r.Context(), deps, markup.Text{MessageID: bookmark.MessageID, Value: bookmark.Content})
 		writeJSON(w, code, map[string]any{"bookmark": bookmark})
 	}
 }
@@ -533,6 +552,7 @@ func handleUpdateBookmark(deps Deps) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to update bookmark")
 			return
 		}
+		renderMarkup(r.Context(), deps, markup.Text{MessageID: bookmark.MessageID, Value: bookmark.Content})
 		writeJSON(w, http.StatusOK, map[string]any{"bookmark": bookmark})
 	}
 }

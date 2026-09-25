@@ -37,6 +37,32 @@ type fakeArchive struct {
 	contexts       map[string]archive.MessageContext
 	contextCalls   [][2]int // before and after counts asked of the store
 	channelLookups int
+	actorNames     map[string]string
+	channelNames   map[string]string
+	mentionedIn    map[string]map[string]string // message ID to names its payload gives
+}
+
+func (f *fakeArchive) DisplayNames(_ context.Context, source string, actorIDs, channelIDs, messageIDs []string) (map[string]string, map[string]string, error) {
+	actors, channels := map[string]string{}, map[string]string{}
+	if source != archive.SourceDiscord {
+		return actors, channels, nil
+	}
+	for _, id := range actorIDs {
+		if name, ok := f.actorNames[id]; ok {
+			actors[id] = name
+		}
+		for _, messageID := range messageIDs {
+			if name, ok := f.mentionedIn[messageID][id]; ok {
+				actors[id] = name
+			}
+		}
+	}
+	for _, id := range channelIDs {
+		if name, ok := f.channelNames[id]; ok {
+			channels[id] = name
+		}
+	}
+	return actors, channels, nil
 }
 
 func (f *fakeArchive) GetArchiveChannel(_ context.Context, id string) (archive.ArchiveChannel, bool, error) {
@@ -588,6 +614,78 @@ func TestListChannelsToolListsArchivedChannels(t *testing.T) {
 		if strings.Contains(resultText(t, result), operational) {
 			t.Errorf("list exposed %q: %s", operational, resultText(t, result))
 		}
+	}
+}
+
+func TestToolsRenderDiscordMarkup(t *testing.T) {
+	const (
+		alice = "111111111111111111"
+		bob   = "222222222222222222" // never posted, named by the message
+		help  = "333333333333333333"
+	)
+	names := func(fake *fakeArchive, messageID string) {
+		fake.actorNames = map[string]string{alice: "Alice"}
+		fake.channelNames = map[string]string{help: "help"}
+		fake.mentionedIn = map[string]map[string]string{messageID: {bob: "Bob"}}
+		for i := range fake.channels {
+			fake.channels[i].Topic = "See <#" + help + ">"
+		}
+	}
+
+	keyword := newFakeArchive(archive.SearchPage{Results: []archive.SearchResult{{
+		MessageID: "thanks", ChannelID: testChannelID, Excerpt: "<mark>Thanks</mark> <@" + bob + ">",
+		SourceCreatedAt: time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC),
+	}}}).withMessages("Thanks <@" + alice + "> and <@" + bob + ">, it is all in <#" + help + ">")
+	names(keyword, "thanks")
+	client := connectClient(t, Deps{Archive: keyword})
+	result, err := client.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "search_messages", Arguments: map[string]any{"query": "thanks"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var search SearchOutput
+	if err := json.Unmarshal([]byte(resultText(t, result)), &search); err != nil {
+		t.Fatal(err)
+	}
+	if len(search.Results) != 1 || search.Results[0].Content != "Thanks @Alice and @Bob, it is all in #help" ||
+		search.Results[0].Excerpt != "<mark>Thanks</mark> @Bob" {
+		t.Fatalf("search = %s", resultText(t, result))
+	}
+
+	result, err = client.CallTool(context.Background(), &mcp.CallToolParams{Name: "list_channels"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed ChannelsOutput
+	if err := json.Unmarshal([]byte(resultText(t, result)), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Channels) != 1 || listed.Channels[0].Topic != "See #help" {
+		t.Fatalf("channels = %s", resultText(t, result))
+	}
+
+	fake, ids := conversationFixture(1, 0)
+	mention := "Answered in <#" + help + ">, thanks <@" + bob + ">"
+	fake.contexts[ids[0]].Messages[0].Content = &mention
+	conversation := fake.contexts[ids[0]]
+	conversation.Channel.Topic = "See <#" + help + ">"
+	fake.contexts[ids[0]] = conversation
+	names(fake, ids[0])
+	client = connectClient(t, Deps{Archive: fake})
+	result, err = client.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "get_message_context", Arguments: map[string]any{"message_id": ids[0]},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var read ContextOutput
+	if err := json.Unmarshal([]byte(resultText(t, result)), &read); err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Messages) != 1 || read.Messages[0].Content != "Answered in #help, thanks @Bob" ||
+		read.Channel.Topic != "See #help" {
+		t.Fatalf("context = %s", resultText(t, result))
 	}
 }
 

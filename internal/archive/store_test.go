@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -399,6 +400,35 @@ func TestSearchMessages(t *testing.T) {
 	}
 	if len(filtered.Results) != 1 || filtered.Results[0].MessageID != second.ID {
 		t.Fatalf("negative attachment results = %+v", filtered.Results)
+	}
+}
+
+func TestSearchExcerptPreservesDiscordMarkup(t *testing.T) {
+	ctx, _, store, channel, actor := fixture(t)
+	content := strings.Repeat("prefix ", 90) +
+		"Thanks <@123456789123456789> <:smile:111111111111111111> &lt;keep&gt; " +
+		strings.Repeat("suffix ", 90)
+	if _, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &actor.ID, ExternalID: "search-markup",
+		Content: &content, SourceCreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.SearchMessages(ctx, archive.SearchParams{Query: "Thanks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Results) != 1 {
+		t.Fatalf("results = %+v", page.Results)
+	}
+	excerpt := page.Results[0].Excerpt
+	for _, part := range []string{"<mark>Thanks</mark>", "<@123456789123456789>", "<:smile:111111111111111111>", "&lt;keep&gt;"} {
+		if !strings.Contains(excerpt, part) {
+			t.Errorf("excerpt %q lost %q", excerpt, part)
+		}
+	}
+	if !strings.HasPrefix(excerpt, "…") || !strings.HasSuffix(excerpt, "…") {
+		t.Errorf("excerpt did not mark both cuts: %q", excerpt)
 	}
 }
 
@@ -1273,6 +1303,109 @@ func TestGetArchiveMessages(t *testing.T) {
 	none, err := store.GetArchiveMessages(ctx, nil)
 	if err != nil || len(none) != 0 {
 		t.Fatalf("no IDs = %+v, %v; want none", none, err)
+	}
+}
+
+func TestDisplayNames(t *testing.T) {
+	ctx, _, store, channel, john := fixture(t)
+	nameless, err := store.UpsertActor(ctx, archive.ActorUpsert{
+		Source: archive.SourceDiscord, ExternalID: "user-nameless", Username: "nameless",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	named, err := store.UpsertActor(ctx, archive.ActorUpsert{
+		Source: archive.SourceDiscord, ExternalID: "user-named", Username: "alice", DisplayName: "Alice",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertActor(ctx, archive.ActorUpsert{
+		Source: "other-source", ExternalID: "user-named", Username: "impostor", DisplayName: "Impostor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 3, 5, 9, 0, 0, 0, time.UTC)
+	mentioning, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &john.ID, ExternalID: "mentioning",
+		Content: strPtr("Welcome <@user-newcomer>, <@user-plain> and <@user-named>"), SourceCreatedAt: base,
+		RawPayload: json.RawMessage(`{"mentions":[
+			{"id":"user-newcomer","username":"newcomer","global_name":"Newcomer"},
+			{"id":"user-plain","username":"plain","global_name":null},
+			{"id":"user-named","username":"alice","global_name":"An older name"}]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: channel.ID, ActorID: &john.ID, ExternalID: "elsewhere",
+		Content: strPtr("<@user-elsewhere>"), SourceCreatedAt: base.Add(time.Minute),
+		RawPayload: json.RawMessage(`{"mentions":[{"id":"user-elsewhere","username":"elsewhere"}]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	actors, _, err := store.DisplayNames(ctx, archive.SourceDiscord,
+		[]string{named.ExternalID, nameless.ExternalID, john.ExternalID, "user-newcomer", "user-plain", "user-elsewhere", "user-unknown"},
+		nil, []string{mentioning.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantActors := map[string]string{
+		"user-named": "Alice", "user-nameless": "nameless", john.ExternalID: "john",
+		"user-newcomer": "Newcomer", "user-plain": "plain",
+	}
+	if !reflect.DeepEqual(actors, wantActors) {
+		t.Errorf("actors = %v, want %v", actors, wantActors)
+	}
+}
+
+func TestDisplayNamesOfChannels(t *testing.T) {
+	ctx, _, store, archived, actor := fixture(t)
+	if _, err := store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: archived.ID, ActorID: &actor.ID, ExternalID: "kept",
+		Content: strPtr("archived"), SourceCreatedAt: time.Date(2026, 3, 6, 9, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	upsert := func(in archive.ChannelUpsert) archive.Channel {
+		t.Helper()
+		in.CommunityID = archived.CommunityID
+		channel, err := store.UpsertChannel(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return channel
+	}
+	upsert(archive.ChannelUpsert{ExternalID: "public", Kind: "text", Name: "public-channel"})
+	upsert(archive.ChannelUpsert{ExternalID: "hidden", Kind: "text", Name: "private-channel", IsPrivate: true})
+	selected := upsert(archive.ChannelUpsert{ExternalID: "selected", Kind: "text", Name: "archived-private-channel", IsPrivate: true})
+	if err := store.SetChannelArchiveEnabled(ctx, selected.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	upsert(archive.ChannelUpsert{
+		ExternalID: "selected-thread", Kind: "thread", Name: "archived thread", ParentChannelID: &selected.ID,
+	})
+	upsert(archive.ChannelUpsert{ExternalID: "private-thread", Kind: "private_thread", Name: "a private thread"})
+	hidden, _, err := store.GetChannelBySourceExternalID(ctx, archive.SourceDiscord, "hidden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upsert(archive.ChannelUpsert{
+		ExternalID: "thread-in-hidden", Kind: "thread", Name: "thread in a private channel", ParentChannelID: &hidden.ID,
+	})
+
+	_, channels, err := store.DisplayNames(ctx, archive.SourceDiscord, nil, []string{
+		archived.ExternalID, "public", "hidden", "selected", "selected-thread", "private-thread", "thread-in-hidden", "unknown",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		archived.ExternalID: "deck-making", "selected": "archived-private-channel", "selected-thread": "archived thread",
+	}
+	if !reflect.DeepEqual(channels, want) {
+		t.Errorf("channels = %v, want %v", channels, want)
 	}
 }
 

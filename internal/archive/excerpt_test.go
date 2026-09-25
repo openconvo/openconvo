@@ -22,12 +22,12 @@ func TestMarkTrimmed(t *testing.T) {
 		{"only whitespace left out", "\nThe first part.\n",
 			"The <mark>first</mark> part.",
 			"The <mark>first</mark> part."},
-		{"delimiter text in the message", "Wrap <mark>this</mark> in tags, then the middle part.",
+		{"delimiter text in the message", "Wrap &lt;mark&gt;this&lt;/mark&gt; in tags, then the middle part.",
 			"in tags, then the <mark>middle</mark> part.",
 			"…in tags, then the <mark>middle</mark> part."},
 		{"empty message", "", "", ""},
-		{"tag blanked by ts_headline", "The first <:emoji:42> part. The last part.",
-			"The first   <mark>part</mark>.", "…The first   <mark>part</mark>.…"},
+		{"headline position cannot be found", "The first part. The last part.",
+			"The <mark>missing</mark> part.", "…The <mark>missing</mark> part.…"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

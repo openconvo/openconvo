@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/openconvo/openconvo/internal/discord/markup"
 )
 
 const channelsInputSchema = `{
@@ -34,6 +36,11 @@ func channelsHandler(deps Deps) mcp.ToolHandlerFor[channelsInput, ChannelsOutput
 			deps.Logger.Error("list archive channels", "error", err)
 			return nil, ChannelsOutput{}, errors.New("listing channels failed")
 		}
+		topics := make([]markup.Text, len(channels))
+		for i := range channels {
+			topics[i] = markup.Text{Value: &channels[i].Topic}
+		}
+		renderMarkup(ctx, deps, topics...)
 		output := ChannelsOutput{Channels: make([]Channel, 0, len(channels))}
 		for _, channel := range channels {
 			// Categories hold no messages.

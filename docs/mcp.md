@@ -177,6 +177,16 @@ Search page's `<mark>` highlighting delimiters as inert text. A message up to
 500 characters comes back whole there; a longer one is cut to a passage around
 the match, starting or ending with `…` where it leaves text out.
 
+Message text reads as a member saw it in Discord: a mention of a person or
+channel as `@name` or `#name`, a custom emoji as `:name:`, a timestamp as a
+UTC date and time. A person is named from the archive's record of who posted,
+or, for someone who never posted in an archived channel, from the mentioning
+message itself. A mention the archive cannot name stays as written, such as
+`<@123…>`; so do role mentions, mentions of channels that are not
+archived, and markup inside code. Search matches the text as archived, where
+a mention is a numeric ID, so searching a name finds messages that spell the
+name out, not mentions of that person.
+
 Semantic mode has the same explicit privacy boundary as the Search page:
 during a search, it sends only the query to the configured OpenAI embeddings
 endpoint, then compares the returned vector against the local, disposable

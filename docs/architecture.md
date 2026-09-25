@@ -88,6 +88,7 @@ internal/embeddings   optional OpenAI generation + disposable pgvector index
 internal/mcpserver    read-only MCP search and reading tools over stdio or HTTP
 internal/updates      cached, read-only GitHub release checking
 internal/discord      Discord source: REST client, rate limiting, Gateway, normalization
+internal/discord/markup  Discord's inline message markup rendered for readers
 internal/ingest       the single archive write path shared by live sync and backfill
 internal/syncer       backfill, reconciliation and their scheduling (as jobs)
 internal/http         HTTP server, middleware, API handlers, SPA serving
@@ -317,6 +318,20 @@ The web routes `/channels/:id` and `/messages/:id` use internal UUIDs rather
 than source names, so renaming a channel cannot break a saved archive link.
 Disabling a channel stops future ingestion but leaves its retained messages
 browsable, matching the archive-preservation contract.
+
+Message text keeps Discord's inline markup as sent: a mention is `<@id>`, a
+channel link `<#id>`. Responses that show text to a reader, the archive API
+and the MCP tools, render it at request time through `internal/discord/markup`
+the way Discord does, so markup inside code or escaped with a backslash stays
+literal. A mention becomes `@name` from the person's actor row or, for someone
+who never posted in an archived channel, from the mentioned users Discord
+lists in that message's payload. A channel mention becomes `#name` only when
+the archive holds the channel, so discovered but unselected channel names
+stay hidden. Custom emoji become
+`:name:`, timestamps UTC dates and times, and command mentions `/name`. This
+is presentation only: canonical content, exports, the search index and
+embeddings keep the markup, and a mention the archive cannot name, or a role
+mention, stays as written.
 
 ## Search
 
