@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -256,7 +258,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn(warning, "component", "http")
 	}
 	server := httpserver.New(
-		httpserver.Config{Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)},
+		httpserver.Config{Addr: net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))},
 		httpDeps,
 	)
 

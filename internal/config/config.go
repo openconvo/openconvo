@@ -21,7 +21,8 @@ const (
 // Config is the full application configuration.
 type Config struct {
 	// Host is the interface the HTTP server binds to. Empty means all
-	// interfaces.
+	// interfaces. Non-empty values are literal IPv4 or IPv6 addresses; Load
+	// resolves localhost to 127.0.0.1.
 	Host string
 	// Port is the HTTP listen port.
 	Port int
@@ -127,6 +128,16 @@ func Load() (Config, error) {
 		OpenAIAPIKey:         getenv("OPENAI_API_KEY", ""),
 		MCPToken:             getenv("OPENCONVO_MCP_TOKEN", ""),
 		LogFormat:            getenv("LOG_FORMAT", "text"),
+	}
+
+	// localhost is the one hostname accepted: it is how "loopback only" is
+	// usually written, and resolving it here keeps the listener, the
+	// healthcheck and BindWarning on the same literal address.
+	if strings.EqualFold(cfg.Host, "localhost") {
+		cfg.Host = "127.0.0.1"
+	}
+	if cfg.Host != "" && net.ParseIP(cfg.Host) == nil {
+		return Config{}, fmt.Errorf("OPENCONVO_HOST must be empty (all interfaces), localhost or a literal IP address, got %q; configure the public domain in your reverse proxy", cfg.Host)
 	}
 
 	port, err := parsePort(getenv("OPENCONVO_PORT", "8080"))

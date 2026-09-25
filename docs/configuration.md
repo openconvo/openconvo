@@ -36,9 +36,13 @@ for running behind a reverse proxy.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENCONVO_HOST` | all interfaces | HTTP bind interface for a bare process; leave empty under Compose |
+| `OPENCONVO_HOST` | all interfaces | HTTP bind IP for a bare process (e.g. `127.0.0.1` or `::1`, without brackets); leave empty under Compose |
 | `OPENCONVO_PORT` | `8080` | Host port published (Compose) / listen port (bare process) |
 | `OPENCONVO_PUBLISH_ADDRESS` | `127.0.0.1` | Interface that port is published on (Compose only); set `0.0.0.0` only with an explicit network/TLS boundary |
+
+Configure the public domain in your reverse proxy. `OPENCONVO_HOST` reads
+`localhost` as `127.0.0.1` and rejects other hostnames, URLs, and host:port
+values before startup. Set the port separately with `OPENCONVO_PORT`.
 
 ## Database
 
