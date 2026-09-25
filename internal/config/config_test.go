@@ -129,22 +129,49 @@ func TestLoadInvalidPort(t *testing.T) {
 }
 
 func TestLoadHost(t *testing.T) {
-	t.Setenv("OPENCONVO_HOST", "")
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
+	for _, host := range []string{"", "127.0.0.1", "0.0.0.0", "10.0.0.5", "::", "::1", "2001:db8::1"} {
+		t.Run(host, func(t *testing.T) {
+			t.Setenv("OPENCONVO_HOST", host)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Host != host {
+				t.Errorf("Host = %q, want %q", cfg.Host, host)
+			}
+		})
 	}
-	if cfg.Host != "" {
-		t.Errorf("Host = %q, want empty (every interface) by default", cfg.Host)
-	}
+}
 
-	t.Setenv("OPENCONVO_HOST", "127.0.0.1")
-	cfg, err = Load()
-	if err != nil {
-		t.Fatal(err)
+func TestLoadHostLocalhost(t *testing.T) {
+	// localhost is how "loopback only" is usually written, and a bare-process
+	// configuration using it worked before literal addresses were enforced.
+	for _, host := range []string{"localhost", "LocalHost"} {
+		t.Run(host, func(t *testing.T) {
+			t.Setenv("OPENCONVO_HOST", host)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Host != "127.0.0.1" {
+				t.Errorf("Host = %q, want 127.0.0.1", cfg.Host)
+			}
+			if cfg.BindWarning(true) == "" {
+				t.Error("localhost in a container produced no loopback warning")
+			}
+		})
 	}
-	if cfg.Host != "127.0.0.1" {
-		t.Errorf("Host = %q, want 127.0.0.1", cfg.Host)
+}
+
+func TestLoadRejectsInvalidHost(t *testing.T) {
+	for _, host := range []string{"archive.example.com", "localhost:8080", "https://archive.example.com", "127.0.0.1:8080", "[::1]", "[::1]:8080", "999.0.0.1", "0.0.0.0/path"} {
+		t.Run(host, func(t *testing.T) {
+			t.Setenv("OPENCONVO_HOST", host)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "OPENCONVO_HOST") || !strings.Contains(err.Error(), "reverse proxy") {
+				t.Fatalf("Load() with host %q error = %v, want bind-address guidance", host, err)
+			}
+		})
 	}
 }
 
@@ -368,7 +395,6 @@ func TestBindWarning(t *testing.T) {
 		{name: "loopback outside a container is the recommendation", host: "127.0.0.1"},
 		{name: "an explicit interface in a container is deliberate", host: "0.0.0.0", inContainer: true},
 		{name: "a private address in a container is deliberate", host: "10.0.0.5", inContainer: true},
-		{name: "a hostname is not something to guess about", host: "openconvo.internal", inContainer: true},
 	}
 
 	for _, tc := range cases {

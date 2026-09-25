@@ -68,6 +68,18 @@ Before crossing a compatibility boundary:
 Never rerun `scripts/install.sh` over an existing installation. It is an
 initial installer and deliberately refuses to replace `.env`.
 
+## Upgrading without Compose
+
+`scripts/upgrade.sh` requires Compose. For other deployments, read the release
+notes, take a [backup](self-hosting.md#backing-up-without-compose), then stop the
+old process and replace its binary or image, retaining configuration, database,
+and attachment storage. Start only one `serve` process against the database;
+overlapping instances can requeue each other's running jobs. Migrations run on
+startup by default; with `OPENCONVO_AUTO_MIGRATE=false`, run the new binary's
+`openconvo migrate` first. Check `openconvo version`, `openconvo healthcheck`,
+logs, and a sample attachment. The [rollback limits](#rollback-and-recovery)
+still apply.
+
 ## Development checkouts
 
 An installation built directly from a branch or commit is a development build;

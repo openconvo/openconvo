@@ -143,6 +143,13 @@ Terminate TLS in front of OpenConvo before exposing it beyond localhost. When
 the reverse proxy supplies `X-Forwarded-Proto: https`, OpenConvo marks the
 session cookie `Secure`.
 
+Scripts using `POST /api/v1/auth/session` must send the JSON body
+`{"password":"..."}` and an `Origin` header such as
+`Origin: https://archive.example.com`, with host and port matching the request's
+`Host`. Reuse the returned session cookie for authenticated calls and include
+`Origin` on logout and other state-changing requests. Missing or mismatched
+origins receive `403`; this is an intentional CSRF check.
+
 A fresh installation archives nothing until you connect a bot and select
 channels; the next two sections cover both.
 
@@ -579,9 +586,9 @@ database for both filesystem and S3 storage. Do not mistake S3 bucket
 versioning for deletion-safe backup policy: old object versions can retain
 content after OpenConvo has been told to delete it.
 
-`scripts/backup.sh` creates both forms in one run: a PostgreSQL logical
-custom-format dump, which is a convenient operational restore point, and a
-compressed, independently verifiable portable export.
+For Compose installations, `scripts/backup.sh` creates both forms in one run:
+a PostgreSQL logical custom-format dump, which is a convenient operational
+restore point, and a compressed, independently verifiable portable export.
 
 ```bash
 ./scripts/backup.sh                 # writes ./backup/openconvo-<timestamp>/
@@ -610,6 +617,33 @@ Keep remote credentials outside the OpenConvo host or in a separately backed
 up secret manager. OpenConvo currently has no persistent application
 encryption key. Provider-side encryption settings and credential recovery
 remain the administrator's responsibility.
+
+### Backing up without Compose
+
+With `openconvo`, a compatible `pg_dump`, and `tar` installed, export the
+instance's `DATABASE_URL` and storage settings into your shell (the binary does
+not read `.env`). Ensure attachment storage is accessible and the destination
+has room for the dump, export, and compressed copy:
+
+```bash
+(
+  set -eu
+  umask 077
+  mkdir -p ./backup
+  oc_backup=$(mktemp -d "./backup/openconvo-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
+  pg_dump --dbname="$DATABASE_URL" --format=custom --file="$oc_backup/openconvo.dump"
+  openconvo export --output "$oc_backup/openconvo-export"
+  openconvo verify "$oc_backup/openconvo-export"
+  tar -C "$oc_backup" -czf "$oc_backup/openconvo-export.tar.gz" openconvo-export
+  printf 'Backup complete: %s\n' "$oc_backup"
+)
+```
+
+Copy successful backups off-machine; failed runs leave partial output. Retain
+the attachment store for database restores: portable exports include stored
+files but cannot currently be imported back into OpenConvo. The dump and export
+are separate snapshots if ingestion continues. Dashboard-scheduled database
+backups also work without Compose when `pg_dump` is available.
 
 ### Restoring a database backup
 
