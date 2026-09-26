@@ -177,12 +177,12 @@ function StatusGrid({ status, syncRows }: { status: SystemStatus; syncRows: Sync
           <h2>Channels being archived</h2>
           <ul className="channel-list">
             {syncRows.map((row) => (
-              <li key={row.channel_id} className="channel-row">
+              <li key={row.channel_id} className="channel-row dashboard-channel-row">
                 <span className="channel-name">
                   <Link to={`/channels/${row.channel_id}`}>#{row.channel_name}</Link>{" "}
                   <span className="muted">· {row.community_name}</span>
                 </span>
-                <SyncChip row={row} />
+                <SyncChip row={row} showErrorDetails />
               </li>
             ))}
           </ul>
