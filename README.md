@@ -71,7 +71,7 @@ a copy you hold, rather than a summary that replaces it.
   channel, author, date and attachment filters. Optional semantic search
   (bring your own OpenAI key) helps when you remember the meaning but not the
   words. An optional read-only [MCP endpoint](docs/mcp.md) lets your own AI
-  tools search the archive too.
+  tools search the archive too, and read each result in its conversation.
 - **Curate what is worth keeping.** Bookmark important messages, add titles
   and descriptions, and organize them with tags and collections. Members with
   permission can save a message straight from Discord with the built-in

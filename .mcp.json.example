@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "openconvo": {
+      "type": "http",
+      "url": "https://archive.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${OPENCONVO_MCP_TOKEN}"
+      }
+    }
+  }
+}

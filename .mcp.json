@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "openconvo": {
-      "command": "docker",
-      "args": ["compose", "exec", "-T", "openconvo", "openconvo", "mcp"]
-    }
-  }
-}

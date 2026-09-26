@@ -105,8 +105,9 @@ without a new frontend dependency.
       has-attachment; highlighted excerpts
 - [x] Optional semantic search over disposable pgvector message embeddings,
       with the same filters and an explicit per-query OpenAI privacy notice
-- [x] Optional MCP adapter exposing that search as one read-only tool over
-      local stdio or authenticated remote Streamable HTTP
+- [x] Optional read-only MCP adapter exposing that search, each result's
+      conversational context, and the archived channel list, over local stdio
+      or authenticated remote Streamable HTTP
 - [x] Every result opens in conversational context
 
 ### 6. Preservation (done)

@@ -53,6 +53,18 @@ Schema migrations run automatically on startup when
 `OPENCONVO_AUTO_MIGRATE=true`, the default. Migrations are additive and
 up-only.
 
+A migration that rebuilds derived data can make that first start slow.
+Migration 0003, which makes keyword search ignore accents, regenerates the
+search column of every message and so rewrites the messages table once. It
+took about 20 seconds per 500,000 messages on a desktop machine; a slower
+server or disk takes longer. While it runs, PostgreSQL needs free disk space
+about the size of the messages table, and OpenConvo does not answer yet, so a
+health check made right after recreating the container can fail even though
+the upgrade is proceeding. Follow `docker compose logs -f openconvo` until it
+logs `migrations applied` and `schema ready`, and leave the container running
+meanwhile: stopping it loses nothing, because each migration runs in a single
+transaction, but the next start does the whole rewrite again.
+
 ## Manual compatibility-boundary upgrades
 
 Before crossing a compatibility boundary:

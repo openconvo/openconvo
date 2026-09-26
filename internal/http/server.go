@@ -46,6 +46,7 @@ type ArchiveAPI interface {
 	CreateBookmark(ctx context.Context, in archive.BookmarkUpsert) (archive.Bookmark, bool, error)
 	UpdateBookmark(ctx context.Context, bookmarkID string, in archive.BookmarkUpsert) (archive.Bookmark, error)
 	DeleteBookmark(ctx context.Context, bookmarkID string) error
+	DisplayNames(ctx context.Context, source string, actorIDs, channelIDs, messageIDs []string) (map[string]string, map[string]string, error)
 }
 
 // BlobStore is the read side of content-addressed attachment storage.

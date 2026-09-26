@@ -316,7 +316,9 @@ type SearchParams struct {
 
 // SearchResult is a compact message hit. Keyword excerpts may contain <mark>
 // delimiters inserted by PostgreSQL's ts_headline; semantic excerpts are
-// bounded plain message text. Clients must treat all other text as plain text.
+// bounded plain message text. Either kind marks a cut with "…". Clients must
+// treat all other text as plain text. Distance, set only by semantic search,
+// is the cosine distance to the query.
 type SearchResult struct {
 	MessageID       string        `json:"message_id"`
 	ChannelID       string        `json:"channel_id"`
@@ -326,6 +328,7 @@ type SearchResult struct {
 	SourceCreatedAt time.Time     `json:"source_created_at"`
 	Excerpt         string        `json:"excerpt"`
 	HasAttachment   bool          `json:"has_attachment"`
+	Distance        *float64      `json:"distance,omitempty"`
 }
 
 // SearchPage is one relevance-ranked page of search results.

@@ -22,7 +22,8 @@ import (
 
 const mcpHelp = `Usage: openconvo mcp
 
-Expose one read-only search_messages tool to an MCP client over standard
+Expose OpenConvo's read-only MCP tools, search_messages,
+get_message_context and list_channels, to an MCP client over standard
 input/output. DATABASE_URL is required. Semantic searches also use the
 existing OpenConvo embedding settings and OPENAI_API_KEY.`
 
@@ -57,13 +58,13 @@ func runMCP(args []string) error {
 	}
 	defer pool.Close()
 
-	keyword := archive.New(pool)
+	store := archive.New(pool)
 	semantic := embeddings.New(pool, nil, embeddings.Options{
 		Defaults: embeddings.Preset(cfg.EmbeddingsEnabled),
 		APIKey:   cfg.OpenAIAPIKey,
 	}, logger)
 	server := mcpserver.New(mcpserver.Deps{
-		Keyword: keyword, Semantic: semantic, Logger: logger,
+		Archive: store, Semantic: semantic, Logger: logger,
 	}, version.Version)
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 		return err

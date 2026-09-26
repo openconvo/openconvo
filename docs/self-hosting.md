@@ -712,9 +712,13 @@ fall back to.
 
 The PostgreSQL server must have the pgvector extension installed and available
 to the role that runs the migrations, whether or not you ever enable semantic
-search. PostgreSQL 17 with pgvector 0.8 is what the Compose deployment, the
-test suite and CI use; older PostgreSQL back to 14 is expected to work but is
-not exercised.
+search. Keyword search also needs the `unaccent` extension from PostgreSQL's
+standard contrib modules to ignore accents. It is a trusted extension, so a
+role with the `CREATE` privilege on the database creates it during migration;
+for a more restricted role, have an administrator run `CREATE EXTENSION
+unaccent;` in the OpenConvo database first. PostgreSQL 17 with pgvector 0.8 is
+what the Compose deployment, the test suite and CI use; older PostgreSQL back
+to 14 is expected to work but is not exercised.
 
 Point `STORAGE_PATH` at a directory on a filesystem you back up, or configure
 the S3 driver as described above.

@@ -1,5 +1,5 @@
 // Package mcpserver exposes a deliberately narrow, read-only MCP surface over
-// the canonical archive's existing search implementations.
+// the canonical archive's existing search and reading queries.
 package mcpserver
 
 import (
@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/openconvo/openconvo/internal/archive"
+	"github.com/openconvo/openconvo/internal/discord/markup"
 	"github.com/openconvo/openconvo/internal/embeddings"
 )
 
@@ -27,7 +29,7 @@ const searchInputSchema = `{
       "type": "string",
       "minLength": 1,
       "maxLength": 500,
-      "description": "Text or meaning to search for. FTS accepts PostgreSQL web-style search syntax including quoted phrases and exclusions."
+      "description": "Words or meaning to search for. fts accepts web-search syntax: \"quoted phrases\", or between alternatives, and -word to exclude."
     },
     "mode": {
       "type": "string",
@@ -37,7 +39,7 @@ const searchInputSchema = `{
     },
     "channel_id": {
       "type": "string",
-      "description": "Optional OpenConvo channel UUID. Result objects include channel IDs for follow-up searches."
+      "description": "Optional OpenConvo channel UUID from list_channels or a result. A thread is a channel of its own."
     },
     "author": {
       "type": "string",
@@ -46,11 +48,11 @@ const searchInputSchema = `{
     },
     "after": {
       "type": "string",
-      "description": "Optional inclusive lower date bound as YYYY-MM-DD or an RFC3339 timestamp."
+      "description": "Optional inclusive lower bound: YYYY-MM-DD (midnight UTC) or an RFC3339 timestamp such as 2026-09-01T00:00:00+02:00."
     },
     "before": {
       "type": "string",
-      "description": "Optional exclusive upper date bound as YYYY-MM-DD or an RFC3339 timestamp."
+      "description": "Optional exclusive upper bound: YYYY-MM-DD (midnight UTC) or an RFC3339 timestamp such as 2026-09-02T00:00:00+02:00."
     },
     "has_attachment": {
       "type": "boolean",
@@ -76,15 +78,26 @@ const searchInputSchema = `{
 
 var uuidPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-// SearchAPI is the one operation the MCP boundary may perform. The keyword
-// archive store and the optional semantic service both satisfy it.
+// SearchAPI is satisfied by the archive's keyword search and by the optional
+// semantic index.
 type SearchAPI interface {
 	SearchMessages(context.Context, archive.SearchParams) (archive.SearchPage, error)
 }
 
-// Deps are the read-only search implementations exposed by the MCP server.
+// Archive is the read-only archive surface behind the tools. *archive.Store
+// satisfies it.
+type Archive interface {
+	SearchAPI
+	GetArchiveChannel(ctx context.Context, channelID string) (archive.ArchiveChannel, bool, error)
+	ListArchiveChannels(ctx context.Context) ([]archive.ArchiveChannel, error)
+	GetArchiveMessages(ctx context.Context, ids []string) ([]archive.ArchiveMessage, error)
+	GetMessageContext(ctx context.Context, messageID string, beforeCount, afterCount int) (archive.MessageContext, bool, error)
+	DisplayNames(ctx context.Context, source string, actorIDs, channelIDs, messageIDs []string) (map[string]string, map[string]string, error)
+}
+
+// Deps are the read-only implementations exposed by the MCP server.
 type Deps struct {
-	Keyword  SearchAPI
+	Archive  Archive
 	Semantic SearchAPI
 	Logger   *slog.Logger
 }
@@ -101,33 +114,27 @@ type searchInput struct {
 	Offset        int    `json:"offset"`
 }
 
-// SearchOutput is the structured result returned to MCP clients. It omits
-// actor UUIDs and avatar URLs because they do not help answer a search query.
+// SearchOutput is the structured result returned to MCP clients.
 type SearchOutput struct {
 	Results    []SearchResult `json:"results"`
 	HasMore    bool           `json:"has_more"`
 	NextOffset int            `json:"next_offset,omitempty"`
 }
 
+// SearchResult is one hit: the message and where it was found. Excerpt is
+// set in fts mode only, and Distance in semantic mode only.
 type SearchResult struct {
-	MessageID       string       `json:"message_id"`
-	ChannelID       string       `json:"channel_id"`
-	ChannelName     string       `json:"channel_name"`
-	CommunityName   string       `json:"community_name"`
-	Author          *SearchActor `json:"author,omitempty"`
-	SourceCreatedAt string       `json:"source_created_at"`
-	Excerpt         string       `json:"excerpt"`
-	HasAttachment   bool         `json:"has_attachment"`
+	Message
+	ChannelID     string   `json:"channel_id"`
+	ChannelName   string   `json:"channel_name"`
+	CommunityName string   `json:"community_name"`
+	Excerpt       string   `json:"excerpt,omitempty"`
+	HasAttachment bool     `json:"has_attachment"`
+	Distance      *float64 `json:"distance,omitempty"`
 }
 
-type SearchActor struct {
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	IsBot       bool   `json:"is_bot"`
-}
-
-// New constructs a server with exactly one read-only tool and no resources,
-// prompts, sampling, or network listener.
+// New constructs a server with read-only tools and no resources, prompts,
+// sampling, or network listener.
 func New(deps Deps, serverVersion string) *mcp.Server {
 	if deps.Logger == nil {
 		deps.Logger = slog.New(slog.DiscardHandler)
@@ -141,7 +148,7 @@ func New(deps Deps, serverVersion string) *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_messages",
 		Title:       "Search archived messages",
-		Description: "Search live, non-deleted archived messages using local PostgreSQL full-text search or the optional semantic index. Supports the same channel, author, date, attachment, and pagination filters as OpenConvo's search page.",
+		Description: searchDescription,
 		InputSchema: json.RawMessage(searchInputSchema),
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:   true,
@@ -149,8 +156,38 @@ func New(deps Deps, serverVersion string) *mcp.Server {
 		},
 	}, searchHandler(deps))
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_message_context",
+		Title:       "Read a message in context",
+		Description: contextDescription,
+		InputSchema: json.RawMessage(contextInputSchema),
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
+	}, contextHandler(deps))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_channels",
+		Title:       "List archived channels",
+		Description: channelsDescription,
+		InputSchema: json.RawMessage(channelsInputSchema),
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
+	}, channelsHandler(deps))
+
 	return server
 }
+
+const searchDescription = "Search live, non-deleted archived messages. " +
+	"Default fts matches whole words locally, ignoring letter case and accents; emoji and punctuation alone are not searchable. " +
+	"semantic sends only the query to OpenAI and returns cosine distance (lower is closer). " +
+	"Results include content, cut at 2000 characters with …, and fts excerpts with <mark> highlights and … for omitted text. " +
+	"Mentions display as @name or #channel where known, but search indexes the original ID markup. " +
+	"Use get_message_context for full text and surrounding messages, and list_channels for channel IDs. " +
+	"Date-only bounds mean midnight UTC."
 
 func searchHandler(deps Deps) mcp.ToolHandlerFor[searchInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input searchInput) (*mcp.CallToolResult, SearchOutput, error) {
@@ -159,11 +196,11 @@ func searchHandler(deps Deps) mcp.ToolHandlerFor[searchInput, SearchOutput] {
 			return nil, SearchOutput{}, err
 		}
 
-		searcher := deps.Keyword
+		var searcher SearchAPI = deps.Archive
 		if mode == "semantic" {
 			searcher = deps.Semantic
 		}
-		if searcher == nil {
+		if searcher == nil || deps.Archive == nil {
 			return nil, SearchOutput{}, fmt.Errorf("%s search is unavailable", mode)
 		}
 
@@ -171,29 +208,66 @@ func searchHandler(deps Deps) mcp.ToolHandlerFor[searchInput, SearchOutput] {
 		if err != nil {
 			return nil, SearchOutput{}, searchError(deps.Logger, mode, err)
 		}
+		if len(page.Results) == 0 && params.ChannelID != "" {
+			// An empty page must not read as "never discussed" in a channel
+			// that does not exist.
+			_, found, err := deps.Archive.GetArchiveChannel(ctx, params.ChannelID)
+			if err != nil {
+				deps.Logger.Error("look up search channel", "channel_id", params.ChannelID, "error", err)
+				return nil, SearchOutput{}, errors.New("search failed")
+			}
+			if !found {
+				return nil, SearchOutput{}, errors.New("unknown channel_id: no archived channel has that ID; list_channels returns the archived channels")
+			}
+		}
+
+		ids := make([]string, len(page.Results))
+		for i, result := range page.Results {
+			ids[i] = result.MessageID
+		}
+		messages, err := deps.Archive.GetArchiveMessages(ctx, ids)
+		if err != nil {
+			deps.Logger.Error("load search results", "mode", mode, "error", err)
+			return nil, SearchOutput{}, errors.New("search failed")
+		}
+		texts := make([]markup.Text, 0, len(messages)+len(page.Results))
+		byID := make(map[string]archive.ArchiveMessage, len(messages))
+		for _, message := range messages {
+			byID[message.ID] = message
+			texts = append(texts, markup.Text{MessageID: message.ID, Value: message.Content})
+		}
+		for i := range page.Results {
+			texts = append(texts, markup.Text{MessageID: page.Results[i].MessageID, Value: &page.Results[i].Excerpt})
+		}
+		// Before messageView caps the content, so a cut never splits a mention.
+		renderMarkup(ctx, deps, texts...)
+
 		output := SearchOutput{
 			Results: make([]SearchResult, 0, len(page.Results)),
 			HasMore: page.HasMore,
 		}
 		if page.HasMore {
+			// Counts hits dropped below, so the next page repeats nothing.
 			output.NextOffset = params.Offset + len(page.Results)
 		}
 		for _, result := range page.Results {
-			out := SearchResult{
-				MessageID:       result.MessageID,
-				ChannelID:       result.ChannelID,
-				ChannelName:     result.ChannelName,
-				CommunityName:   result.CommunityName,
-				SourceCreatedAt: result.SourceCreatedAt.UTC().Format(time.RFC3339Nano),
-				Excerpt:         result.Excerpt,
-				HasAttachment:   result.HasAttachment,
+			message, ok := byID[result.MessageID]
+			if !ok {
+				continue // deleted since the search ran
 			}
-			if result.Actor != nil {
-				out.Author = &SearchActor{
-					Username:    result.Actor.Username,
-					DisplayName: result.Actor.DisplayName,
-					IsBot:       result.Actor.IsBot,
-				}
+			out := SearchResult{
+				Message:       messageView(message, searchContentLimit),
+				ChannelID:     result.ChannelID,
+				ChannelName:   result.ChannelName,
+				CommunityName: result.CommunityName,
+				HasAttachment: result.HasAttachment,
+			}
+			if mode == "fts" {
+				out.Excerpt = result.Excerpt
+			}
+			if result.Distance != nil {
+				distance := math.Round(*result.Distance*1e4) / 1e4
+				out.Distance = &distance
 			}
 			output.Results = append(output.Results, out)
 		}
@@ -271,6 +345,8 @@ func parseTimeBound(name, value string) (*time.Time, error) {
 
 func searchError(logger *slog.Logger, mode string, err error) error {
 	switch {
+	case errors.Is(err, archive.ErrQueryNotSearchable):
+		return errors.New("query has no searchable words: keyword search ignores emoji and punctuation; search for words from the message, or use mode semantic")
 	case errors.Is(err, embeddings.ErrDisabled):
 		return errors.New("semantic search is disabled; enable message embeddings in OpenConvo Settings")
 	case errors.Is(err, embeddings.ErrNotConfigured):

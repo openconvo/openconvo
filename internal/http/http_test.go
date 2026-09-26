@@ -400,12 +400,43 @@ type fakeArchive struct {
 	messagePage archive.MessagePage
 	contexts    map[string]archive.MessageContext
 	searchPage  archive.SearchPage
+	searchErr   error
 	searches    []archive.SearchParams
 	attachments map[string]archive.StoredAttachment
 	// attachmentLookups records every ID that reached the store, so a test
 	// can tell "not found" apart from "never asked".
 	attachmentLookups []string
 	bookmarks         []archive.Bookmark
+	actorNames        map[string]string
+	channelNames      map[string]string
+	mentionedIn       map[string]map[string]string // message ID to names its payload gives
+	namesErr          error
+}
+
+func (f *fakeArchive) DisplayNames(_ context.Context, source string, actorIDs, channelIDs, messageIDs []string) (map[string]string, map[string]string, error) {
+	if f.namesErr != nil {
+		return nil, nil, f.namesErr
+	}
+	actors, channels := map[string]string{}, map[string]string{}
+	if source != archive.SourceDiscord {
+		return actors, channels, nil
+	}
+	for _, id := range actorIDs {
+		if name, ok := f.actorNames[id]; ok {
+			actors[id] = name
+		}
+		for _, messageID := range messageIDs {
+			if name, ok := f.mentionedIn[messageID][id]; ok {
+				actors[id] = name
+			}
+		}
+	}
+	for _, id := range channelIDs {
+		if name, ok := f.channelNames[id]; ok {
+			channels[id] = name
+		}
+	}
+	return actors, channels, nil
 }
 
 func (f *fakeArchive) ListCommunities(context.Context) ([]archive.Community, error) {
@@ -460,7 +491,7 @@ func (f *fakeArchive) GetMessageContext(_ context.Context, id string, before, af
 
 func (f *fakeArchive) SearchMessages(_ context.Context, params archive.SearchParams) (archive.SearchPage, error) {
 	f.searches = append(f.searches, params)
-	return f.searchPage, nil
+	return f.searchPage, f.searchErr
 }
 
 type fakeSemanticSearch struct {
@@ -727,6 +758,100 @@ func TestArchiveChannelAndMessageEndpoints(t *testing.T) {
 	}
 }
 
+// Every case builds fresh fixtures: rendering rewrites strings in place, so a
+// string shared with an earlier case would already read correctly.
+func TestMessageTextRendersDiscordMarkup(t *testing.T) {
+	const (
+		alice = "111111111111111111"
+		bob   = "222222222222222222" // never posted, named by the message
+		help  = "333333333333333333"
+	)
+	newHandler := func() http.Handler {
+		fake := newFakeArchive()
+		fake.actorNames = map[string]string{alice: "Alice"}
+		fake.channelNames = map[string]string{help: "help"}
+		fake.mentionedIn = map[string]map[string]string{
+			testMessageUUID: {bob: "Bob"}, "question-id": {bob: "Bob"},
+		}
+		fake.archiveRows[0].Topic = "Questions? See <#" + help + ">"
+		content := "Thanks <@" + alice + ">, see <#" + help + ">"
+		question := "<@" + bob + "> what time is it?"
+		message := archive.ArchiveMessage{
+			ID: testMessageUUID, ChannelID: testUUID, Content: &content,
+			SourceCreatedAt: time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC),
+			ReplyTo:         &archive.MessageReference{ID: "question-id", Content: &question},
+			Attachments:     []archive.ArchiveAttachment{},
+			Reactions:       []archive.Reaction{},
+		}
+		fake.messagePage = archive.MessagePage{Messages: []archive.ArchiveMessage{message}}
+		fake.contexts[testMessageUUID] = archive.MessageContext{
+			Channel: fake.archiveRows[0], TargetID: testMessageUUID, Messages: []archive.ArchiveMessage{message},
+		}
+		fake.searchPage = archive.SearchPage{Results: []archive.SearchResult{{
+			MessageID: testMessageUUID, ChannelID: testUUID, Excerpt: "<mark>Thanks</mark> <@" + bob + ">",
+		}}}
+		bookmarkContent := "<@" + bob + "> has the answer"
+		fake.bookmarks = []archive.Bookmark{{
+			ID: testBookmarkUUID, MessageID: testMessageUUID, Content: &bookmarkContent, Tags: []string{},
+		}}
+		semantic := &fakeSemanticSearch{page: archive.SearchPage{Results: []archive.SearchResult{{
+			MessageID: testMessageUUID, ChannelID: testUUID, Excerpt: "Thanks <@" + bob + ">",
+		}}}}
+		return newTestHandler(Deps{Archive: fake, SemanticSearch: semantic})
+	}
+
+	for _, tc := range []struct {
+		method, path, body string
+		want               []string
+	}{
+		{http.MethodGet, "/api/v1/channels", "", []string{"Questions? See #help"}},
+		{http.MethodGet, "/api/v1/channels/" + testUUID + "/messages", "", []string{
+			"Thanks @Alice, see #help", "@Bob what time is it?", "Questions? See #help",
+		}},
+		{http.MethodGet, "/api/v1/messages/" + testMessageUUID, "", []string{
+			"Thanks @Alice, see #help", "@Bob what time is it?", "Questions? See #help",
+		}},
+		{http.MethodGet, "/api/v1/search?q=thanks", "", []string{"<mark>Thanks</mark> @Bob"}},
+		{http.MethodGet, "/api/v1/search?q=thanks&mode=semantic", "", []string{"Thanks @Bob"}},
+		{http.MethodGet, "/api/v1/bookmarks", "", []string{"@Bob has the answer"}},
+		{http.MethodPost, "/api/v1/bookmarks", `{"message_id":"` + testMessageUUID + `"}`, []string{"@Bob has the answer"}},
+		{http.MethodPut, "/api/v1/bookmarks/" + testBookmarkUUID, `{"title":"Answer"}`, []string{"@Bob has the answer"}},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		if tc.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		newHandler().ServeHTTP(rec, req)
+		body := strings.NewReplacer(`\u003c`, "<", `\u003e`, ">").Replace(rec.Body.String())
+		for _, want := range tc.want {
+			if rec.Code >= 300 || !strings.Contains(body, want) {
+				t.Errorf("%s %s: %d %s, want %q", tc.method, tc.path, rec.Code, body, want)
+			}
+		}
+	}
+}
+
+func TestMessageTextKeepsMarkupWhenNamesFail(t *testing.T) {
+	fake := newFakeArchive()
+	fake.namesErr = errors.New("names unavailable")
+	content := "Thanks <@111111111111111111>"
+	fake.messagePage = archive.MessagePage{Messages: []archive.ArchiveMessage{{
+		ID: testMessageUUID, ChannelID: testUUID, Content: &content,
+		Attachments: []archive.ArchiveAttachment{}, Reactions: []archive.Reaction{},
+	}}}
+	handler := newTestHandler(Deps{Archive: fake})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/channels/"+testUUID+"/messages", nil))
+	var page archive.MessagePage
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || len(page.Messages) != 1 || *page.Messages[0].Content != content {
+		t.Fatalf("timeline: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestArchiveMessageEndpointValidation(t *testing.T) {
 	handler := newTestHandler(Deps{Archive: newFakeArchive()})
 	for _, tc := range []struct {
@@ -831,6 +956,17 @@ func TestSemanticSearchEndpointErrors(t *testing.T) {
 		if rec.Code != tc.want {
 			t.Errorf("error %v: status %d, want %d (%s)", tc.err, rec.Code, tc.want, rec.Body.String())
 		}
+	}
+}
+
+func TestSearchEndpointExplainsUnsearchableQuery(t *testing.T) {
+	fake := newFakeArchive()
+	fake.searchErr = archive.ErrQueryNotSearchable
+	handler := newTestHandler(Deps{Archive: fake})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/search?q=%F0%9F%94%A5", nil))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "emoji") {
+		t.Fatalf("unsearchable query: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
