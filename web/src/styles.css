@@ -784,6 +784,19 @@ code {
   margin-bottom: 0;
 }
 
+.dashboard-channel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.sync-error-detail {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
 /* Archive navigation ------------------------------------------------ */
 
 .archive-page,
