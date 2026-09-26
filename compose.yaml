@@ -18,7 +18,7 @@ name: openconvo
 
 services:
   openconvo:
-    image: ${OPENCONVO_IMAGE:-ghcr.io/openconvo/openconvo:0.1.2}
+    image: ${OPENCONVO_IMAGE:-ghcr.io/openconvo/openconvo:0.1.3}
     restart: unless-stopped
     depends_on:
       postgres:

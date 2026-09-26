@@ -5,7 +5,7 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 project_dir=$(cd "${script_dir}/.." && pwd)
 env_file="${project_dir}/.env"
 env_tmp=""
-release_version="0.1.2"
+release_version="0.1.3"
 release_image="ghcr.io/openconvo/openconvo:${release_version}"
 build_from_source=false
 
