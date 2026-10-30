@@ -15,7 +15,7 @@ RUN npm run build
 # Stage 2: compile the Go binary with the frontend embedded. Also pinned to the
 # build host: Go cross-compiles for the target platform natively, which is far
 # faster and more reliable than emulating the toolchain under QEMU.
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
