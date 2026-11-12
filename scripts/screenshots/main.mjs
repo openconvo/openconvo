@@ -155,7 +155,7 @@ const status = {
   version: { version: "0.1.0", commit: "8f21c746d1", date: "2026-08-27T04:00:00Z", go_version: "go1.26.6" },
   started_at: "2026-08-24T01:15:00Z",
   database: { connected: true, schema_version: 2 },
-  storage: { driver: "s3" },
+  storage: { driver: "s3", location: "bucket field-notes-attachments at 8f2c1d0a.r2.cloudflarestorage.com" },
   discord: { configured: true, connected: true, application_id: "1483927164052738048", bot_username: "OpenConvo Archive" },
   attachments: { enabled: true, stored: 614, pending: 0, failed: 0, stored_bytes: 4831838208 },
   counts: { communities: 1, channels: 14, messages: 18426, attachments: 614 },

@@ -104,7 +104,7 @@ Open the address the installer prints. The dashboard shows system status;
 `docker compose exec openconvo openconvo status` shows the same from the
 terminal.
 
-![OpenConvo dashboard showing archive totals, attachment storage, channel sync progress and service health](images/dashboard.png)
+![OpenConvo dashboard showing archive totals, channel sync progress and service health](images/dashboard.png)
 
 The screenshots in this guide use fictional, synthetic community data.
 
@@ -565,7 +565,7 @@ backups. R2 uses an endpoint of the form
 checks bucket access before enabling the schedule. Credentials never enter the
 browser or database; changing them requires editing `.env` and restarting.
 
-![OpenConvo Backups page showing an R2 destination, retention settings and successful backup history](images/backups.png)
+![OpenConvo Backups page showing an R2 destination, retention settings, successful backup history and attachment storage](images/backups.png)
 
 Each run creates a PostgreSQL custom-format dump with `pg_dump`, computes its
 SHA-256, uploads it with a known content length, verifies the remote object
