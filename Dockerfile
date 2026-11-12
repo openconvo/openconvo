@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: build the React frontend. Its output is platform-independent, so the
 # stage is pinned to the build host and never runs under emulation.
-FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS web
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -15,7 +15,7 @@ RUN npm run build
 # Stage 2: compile the Go binary with the frontend embedded. Also pinned to the
 # build host: Go cross-compiles for the target platform natively, which is far
 # faster and more reliable than emulating the toolchain under QEMU.
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -42,7 +42,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 # Base images are pinned by digest; Dependabot proposes digest updates. The
 # `apk upgrade` picks up Alpine security fixes published since the base image
 # was built, so a rebuild is a complete remedy for an OS package advisory.
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 RUN apk --no-cache upgrade \
     && apk add --no-cache ca-certificates tzdata postgresql17-client \
