@@ -45,6 +45,8 @@ type DatabaseStatus struct {
 type StorageStatus struct {
 	Driver string `json:"driver"`
 	Path   string `json:"path,omitempty"`
+	// Location is the filesystem root, or the bucket and its host.
+	Location string `json:"location,omitempty"`
 }
 
 // DiscordStatus describes Discord configuration and live Gateway state. The

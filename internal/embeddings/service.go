@@ -125,8 +125,12 @@ func (s *Service) Run(ctx context.Context) {
 
 // ScheduleMessage is intentionally best-effort. The canonical message is
 // already committed; a periodic sweep recovers any missed derived work.
+//
+// Reconciliation reports every message it re-reads, changed or not, so a
+// message the current generation already covers is skipped here instead of
+// becoming a job with nothing to do.
 func (s *Service) ScheduleMessage(ctx context.Context, messageID string) {
-	if !s.enabled.Load() || messageID == "" {
+	if !s.enabled.Load() || messageID == "" || !s.needsEmbedding(ctx, messageID) {
 		return
 	}
 	_, err := s.queue.Enqueue(ctx, JobMessage, messagePayload{MessageID: messageID},
@@ -382,6 +386,17 @@ func (s *Service) handleSweep(ctx context.Context, _ *jobs.Job) error {
 		return fmt.Errorf("activate embedding generation: %w", err)
 	}
 	return nil
+}
+
+// needsEmbedding errs towards scheduling: a failed lookup queues the job and
+// lets the handler decide.
+func (s *Service) needsEmbedding(ctx context.Context, messageID string) bool {
+	generation, found, err := s.generation(ctx)
+	if err != nil || !found {
+		return true
+	}
+	_, needed, err := s.loadMessage(ctx, generation.ID, messageID)
+	return err != nil || needed
 }
 
 type messageRow struct {

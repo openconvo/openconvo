@@ -223,6 +223,20 @@ func (q *Queue) ResetRunning(ctx context.Context, kinds []string) (int64, error)
 	return tag.RowsAffected(), nil
 }
 
+// Prune deletes jobs of the given kinds that finished, successfully or
+// not, before the cutoff. Finished jobs are kept only as recent history;
+// nothing reads them back, and without this the table grows forever.
+func (q *Queue) Prune(ctx context.Context, kinds []string, before time.Time) (int64, error) {
+	tag, err := q.pool.Exec(ctx, `
+		DELETE FROM jobs
+		WHERE status IN ('succeeded', 'failed') AND completed_at < $2 AND kind = ANY($1)`,
+		kinds, before.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("jobs: prune: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // Get fetches a job by ID.
 func (q *Queue) Get(ctx context.Context, id string) (*Job, error) {
 	job, err := scanJob(q.pool.QueryRow(ctx,

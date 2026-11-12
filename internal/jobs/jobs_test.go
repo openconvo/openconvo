@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/openconvo/openconvo/internal/jobs"
 	"github.com/openconvo/openconvo/internal/testutil"
 )
@@ -486,4 +488,99 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("condition not met before timeout")
+}
+
+func enqueueFinished(t *testing.T, pool *pgxpool.Pool, queue *jobs.Queue, kind, status string, finishedAgo time.Duration) string {
+	t.Helper()
+	ctx := context.Background()
+	id, err := queue.Enqueue(ctx, kind, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE jobs SET status = $2, completed_at = now() - make_interval(secs => $3)
+		WHERE id = $1::uuid`, id, status, finishedAgo.Seconds()); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func jobExists(t *testing.T, pool *pgxpool.Pool, id string) bool {
+	t.Helper()
+	var exists bool
+	if err := pool.QueryRow(context.Background(),
+		`SELECT EXISTS (SELECT 1 FROM jobs WHERE id = $1::uuid)`, id).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	return exists
+}
+
+func TestPruneDeletesOnlyOldFinishedJobsOfGivenKinds(t *testing.T) {
+	pool := testutil.NewDB(t)
+	ctx := context.Background()
+	queue := jobs.NewQueue(pool)
+	const day = 24 * time.Hour
+
+	oldSucceeded := enqueueFinished(t, pool, queue, "test.prune", jobs.StatusSucceeded, 40*day)
+	oldFailed := enqueueFinished(t, pool, queue, "test.prune", jobs.StatusFailed, 40*day)
+	recent := enqueueFinished(t, pool, queue, "test.prune", jobs.StatusSucceeded, day)
+	otherKind := enqueueFinished(t, pool, queue, "test.other", jobs.StatusSucceeded, 40*day)
+	pending, err := queue.Enqueue(ctx, "test.prune", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := queue.Enqueue(ctx, "test.prune", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE jobs SET status = 'running', started_at = now() - interval '40 days'
+		WHERE id = $1::uuid`, running); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := queue.Prune(ctx, []string{"test.prune"}, time.Now().Add(-30*day))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 2 {
+		t.Errorf("deleted = %d, want 2", deleted)
+	}
+	for name, id := range map[string]string{"old succeeded": oldSucceeded, "old failed": oldFailed} {
+		if jobExists(t, pool, id) {
+			t.Errorf("%s job survived pruning", name)
+		}
+	}
+	for name, id := range map[string]string{"recent": recent, "other kind": otherKind, "pending": pending, "running": running} {
+		if !jobExists(t, pool, id) {
+			t.Errorf("%s job was pruned", name)
+		}
+	}
+}
+
+func TestWorkerPrunesFinishedJobsPastRetention(t *testing.T) {
+	pool := testutil.NewDB(t)
+	queue := jobs.NewQueue(pool)
+	const day = 24 * time.Hour
+
+	expired := enqueueFinished(t, pool, queue, "test.prune", jobs.StatusSucceeded, 31*day)
+	retained := enqueueFinished(t, pool, queue, "test.prune", jobs.StatusSucceeded, 29*day)
+
+	worker := jobs.NewWorker(queue, discard())
+	worker.Register("test.prune", func(context.Context, *jobs.Job) error { return nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		worker.Run(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	waitFor(t, 5*time.Second, func() bool { return !jobExists(t, pool, expired) })
+	if !jobExists(t, pool, retained) {
+		t.Error("job inside the retention window was pruned")
+	}
 }

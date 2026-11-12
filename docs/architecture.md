@@ -268,6 +268,11 @@ kind: one worker per kind, so nobody requeues work another worker is
 already executing (documented in code). `dedupe_key` prevents duplicate live
 work such as two backfills of one channel.
 
+Finished jobs are operational history, not archive data: each worker deletes
+its own succeeded and failed jobs 30 days after they complete, so the table
+stays proportional to recent activity instead of growing for the life of the
+install.
+
 ## Synchronization strategy
 
 ```text

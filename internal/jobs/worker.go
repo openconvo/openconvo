@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+const (
+	// finishedJobRetention is how long a finished job stays queryable for
+	// diagnosis before it is deleted.
+	finishedJobRetention = 30 * 24 * time.Hour
+	pruneInterval        = time.Hour
+)
+
 // HandlerFunc executes one job. Returning an error schedules a retry
 // (or marks the job failed once attempts are exhausted).
 type HandlerFunc func(ctx context.Context, job *Job) error
@@ -78,6 +85,12 @@ func (w *Worker) Run(ctx context.Context) {
 	sem := make(chan struct{}, w.concurrency)
 	var wg sync.WaitGroup
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		w.pruneLoop(ctx, kinds)
+	}()
+
 loop:
 	for ctx.Err() == nil {
 		job, err := w.queue.claim(ctx, kinds)
@@ -118,6 +131,29 @@ loop:
 
 	wg.Wait()
 	w.logger.Info("worker stopped")
+}
+
+// pruneLoop deletes this worker's finished jobs once they pass retention,
+// at startup and then hourly.
+func (w *Worker) pruneLoop(ctx context.Context, kinds []string) {
+	ticker := time.NewTicker(pruneInterval)
+	defer ticker.Stop()
+	for {
+		deleted, err := w.queue.Prune(ctx, kinds, time.Now().Add(-finishedJobRetention))
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			w.logger.Error("prune finished jobs", "error", err)
+		} else if deleted > 0 {
+			w.logger.Info("pruned finished jobs", "count", deleted, "kinds", kinds)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (w *Worker) execute(ctx context.Context, job *Job) {

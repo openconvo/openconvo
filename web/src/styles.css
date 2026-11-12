@@ -742,6 +742,14 @@ code {
   background: var(--neutral-bg);
 }
 
+.attachment-progress {
+  display: block;
+  width: 100%;
+  height: 0.5rem;
+  margin-bottom: 0.6rem;
+  accent-color: var(--ok);
+}
+
 /* Channel selection ------------------------------------------------- */
 
 .channel-list {
