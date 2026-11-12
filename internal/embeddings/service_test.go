@@ -562,3 +562,40 @@ func TestDeletedMessageContentIsNotSentToProvider(t *testing.T) {
 	assertEmbeddingCount(t, fixture.pool, deleted.ID, 0)
 	assertEmbeddingCount(t, fixture.pool, live.ID, 1)
 }
+
+func countMessageJobs(t *testing.T, pool *pgxpool.Pool) int {
+	t.Helper()
+	var count int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM jobs WHERE kind = $1`, JobMessage).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func TestScheduleMessageSkipsMessagesAlreadyEmbedded(t *testing.T) {
+	f := newSweepFixture(t, &fakeEmbedder{})
+	ctx := context.Background()
+	message := f.message(t, "message", "original message")
+	if err := f.service.handleSweep(ctx, &jobs.Job{}); err != nil {
+		t.Fatal(err)
+	}
+	assertEmbeddingCount(t, f.pool, message.ID, 1)
+
+	// Reconciliation re-reads every message in its window, changed or not.
+	f.service.ScheduleMessage(ctx, message.ID)
+	if got := countMessageJobs(t, f.pool); got != 0 {
+		t.Fatalf("unchanged message queued %d embedding jobs, want 0", got)
+	}
+
+	edited := "edited message"
+	if _, err := f.store.UpsertMessage(ctx, archive.MessageUpsert{
+		ChannelID: f.channel, ExternalID: "message", Content: &edited, SourceCreatedAt: message.SourceCreatedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.service.ScheduleMessage(ctx, message.ID)
+	if got := countMessageJobs(t, f.pool); got != 1 {
+		t.Fatalf("edited message queued %d embedding jobs, want 1", got)
+	}
+}
