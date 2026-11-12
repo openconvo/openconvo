@@ -12,16 +12,12 @@ type LoadState =
 
 const numberFormat = new Intl.NumberFormat();
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  return `${value.toFixed(1)} ${units[unit]}`;
+function storageSummary(status: SystemStatus): string {
+  const attachments = status.attachments;
+  if (!attachments) return status.storage.location ?? "Attachment blob storage.";
+  if (!attachments.enabled) return "Attachment files are not being stored.";
+  const total = attachments.stored + attachments.pending + attachments.failed;
+  return `${numberFormat.format(attachments.stored)} of ${numberFormat.format(total)} attachment files stored.`;
 }
 
 export default function Dashboard() {
@@ -151,27 +147,6 @@ function StatusGrid({ status, syncRows }: { status: SystemStatus; syncRows: Sync
         <StatCard label="Attachments" value={counts ? numberFormat.format(counts.attachments) : "—"} />
       </div>
 
-      {status.attachments && (
-        <div className="card">
-          <h2>Attachment storage</h2>
-          <p className="muted">
-            {formatBytes(status.attachments.stored_bytes)} stored ·{" "}
-            {numberFormat.format(status.attachments.stored)}{" "}
-            {status.attachments.stored === 1 ? "attachment" : "attachments"}
-            {status.attachments.pending > 0 &&
-              ` · ${numberFormat.format(status.attachments.pending)} pending`}
-            {status.attachments.failed > 0 &&
-              ` · ${numberFormat.format(status.attachments.failed)} failed`}
-          </p>
-          {!status.attachments.enabled && status.attachments.pending > 0 && (
-            <p className="muted">
-              Those pending attachments are archived by reference only. Set{" "}
-              <code>OPENCONVO_ATTACHMENTS_ENABLED=true</code> to store them in OpenConvo.
-            </p>
-          )}
-        </div>
-      )}
-
       {syncRows.length > 0 && (
         <div className="card">
           <h2>Channels being archived</h2>
@@ -222,7 +197,9 @@ function StatusGrid({ status, syncRows }: { status: SystemStatus; syncRows: Sync
         <div className="card">
           <h2>Storage</h2>
           <Pill ok okText={status.storage.driver} badText="" />
-          <p className="muted">{status.storage.path ?? "Attachment blob storage."}</p>
+          <p className="muted">
+            {storageSummary(status)} <Link to="/backups">Attachment storage</Link>
+          </p>
         </div>
         <div className="card">
           <h2>Build</h2>

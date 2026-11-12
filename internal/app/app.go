@@ -318,8 +318,9 @@ func statusProvider(cfg config.Config, pool *pgxpool.Pool, store *archive.Store,
 			Version:   version.Get(),
 			StartedAt: startedAt,
 			Storage: httpserver.StorageStatus{
-				Driver: cfg.StorageDriver,
-				Path:   storagePath,
+				Driver:   cfg.StorageDriver,
+				Path:     storagePath,
+				Location: cfg.StorageLocation(),
 			},
 			Discord: httpserver.DiscordStatus{
 				Configured:    cfg.DiscordConfigured(),

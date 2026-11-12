@@ -16,6 +16,7 @@ export interface DatabaseStatus {
 export interface StorageStatus {
   driver: string;
   path?: string;
+  location?: string;
 }
 
 export interface DiscordStatus {

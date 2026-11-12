@@ -138,7 +138,10 @@ export default function BackupsPanel() {
       <div className="card-heading-row">
         <div>
           <h2>Database backups</h2>
-          <p className="muted">Custom-format PostgreSQL dumps stored outside this server.</p>
+          <p className="muted">
+            Custom-format PostgreSQL dumps stored outside this server. Attachment files are not
+            part of these dumps; see Attachment storage below.
+          </p>
         </div>
         <button
           type="button"

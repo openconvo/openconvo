@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -276,6 +277,23 @@ func (c Config) BindWarning(inContainer bool) string {
 	return fmt.Sprintf("OPENCONVO_HOST=%s binds OpenConvo to loopback inside the container, "+
 		"where the published port cannot reach it; leave OPENCONVO_HOST empty under docker compose",
 		c.Host)
+}
+
+// StorageLocation says where attachment bytes are kept, for status output:
+// the filesystem root, or the bucket and the host that serves it. It never
+// includes credentials.
+func (c Config) StorageLocation() string {
+	if c.StorageDriver != StorageDriverS3 {
+		return c.StoragePath
+	}
+	host := "AWS S3 (" + c.S3Region + ")"
+	if c.S3Endpoint != "" {
+		host = c.S3Endpoint
+		if u, err := url.Parse(c.S3Endpoint); err == nil && u.Host != "" {
+			host = u.Host
+		}
+	}
+	return "bucket " + c.S3Bucket + " at " + host
 }
 
 // DiscordConfigured reports whether a Discord bot token is present.

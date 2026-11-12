@@ -1,3 +1,4 @@
+import AttachmentStoragePanel from "../components/AttachmentStoragePanel";
 import BackupsPanel from "../components/BackupsPanel";
 
 export default function Backups() {
@@ -8,6 +9,7 @@ export default function Backups() {
       </header>
 
       <BackupsPanel />
+      <AttachmentStoragePanel />
     </div>
   );
 }

@@ -43,7 +43,7 @@ func runStatus() error {
 		return err
 	}
 	fmt.Printf("  %-14s connected (schema v%d)\n", "Database", schema)
-	fmt.Printf("  %-14s %s %s\n", "Storage", cfg.StorageDriver, cfg.StoragePath)
+	fmt.Printf("  %-14s %s %s\n", "Storage", cfg.StorageDriver, cfg.StorageLocation())
 	if cfg.DiscordConfigured() {
 		fmt.Printf("  %-14s configured\n", "Discord")
 	} else {

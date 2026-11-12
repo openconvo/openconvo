@@ -409,3 +409,34 @@ func TestBindWarning(t *testing.T) {
 		})
 	}
 }
+
+func TestStorageLocation(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "filesystem",
+			cfg:  Config{StorageDriver: StorageDriverFilesystem, StoragePath: "/data/attachments", S3Bucket: "unused"},
+			want: "/data/attachments",
+		},
+		{
+			name: "s3-compatible endpoint",
+			cfg:  Config{StorageDriver: StorageDriverS3, StoragePath: "/data/attachments", S3Bucket: "archive-files", S3Endpoint: "https://account.r2.example.com"},
+			want: "bucket archive-files at account.r2.example.com",
+		},
+		{
+			name: "aws",
+			cfg:  Config{StorageDriver: StorageDriverS3, S3Bucket: "archive-files", S3Region: "eu-west-3"},
+			want: "bucket archive-files at AWS S3 (eu-west-3)",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.StorageLocation(); got != tc.want {
+				t.Errorf("StorageLocation() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
